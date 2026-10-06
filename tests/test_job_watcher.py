@@ -108,7 +108,7 @@ def test_run_watcher_cycle_imports_matching_and_skips_duplicates(tmp_path: Path)
         SourceListing(
             source_id="lev-1",
             source_name="Lever (ExampleCo)",
-            title="Symfony Engineer",
+            title="Senior Symfony Engineer",
             company="ExampleCo",
             location="Télétravail",
             original_url=AnyHttpUrl("https://jobs.lever.co/exampleco/lev-1"),
@@ -154,7 +154,7 @@ def test_run_watcher_cycle_imports_matching_and_skips_duplicates(tmp_path: Path)
     assert len(offers) == 2
     titles = [o.title for o in offers]
     assert "Développeur Backend PHP Symfony" in titles
-    assert "Symfony Engineer" in titles
+    assert "Senior Symfony Engineer" in titles
 
     # Deuxième cycle avec les mêmes données : toutes doivent être détectées en doublon sans réimport
     with (
