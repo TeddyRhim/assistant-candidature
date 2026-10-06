@@ -21,7 +21,11 @@ htmlcov/
 data/
 !data/
 data/*
-!data/cv_base.json
+!data/cv_base.json.example
+
+# Internal development notes & temporary checklists
+docs/suivi-projet-et-questions.md
+docs/todo-tests.md
 *.sqlite
 *.sqlite3
 *.db

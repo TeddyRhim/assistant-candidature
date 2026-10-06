@@ -1,0 +1,70 @@
+{
+  "name": "Alexandre Martin",
+  "contact": [
+    {
+      "text": "06 00 00 00 00"
+    },
+    {
+      "text": "contact@example.com",
+      "url": "mailto:contact@example.com"
+    },
+    {
+      "text": "linkedin.com/in/alexandre-martin",
+      "url": "https://www.linkedin.com/in/alexandre-martin"
+    },
+    {
+      "text": "github.com/alexandre-martin",
+      "url": "https://github.com/alexandre-martin"
+    }
+  ],
+  "profile": "Développeur backend avec 5 ans d'expérience en conception d'APIs, intégration de systèmes et automatisation de processus métier. Expertise PHP/Symfony, optimisation SQL et architectures web modernes.",
+  "experience": [
+    {
+      "role": "Développeur PHP / Symfony",
+      "company": "TechSolutions",
+      "period": "2020 - 2024",
+      "bullets": [
+        "Développement et maintenance d'architectures back-end en PHP et Symfony.",
+        "Conception, évolution et maintenance d'API REST (CRUD, webhooks, authentification JWT) et intégration de services tiers.",
+        "Développement de services métier avec Doctrine ORM, optimisation des requêtes SQL et bases de données PostgreSQL.",
+        "Mise en place de tests automatisés et participation aux revues de code en environnement Agile/Scrum."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "text": "Titre RNCP Développeur / Diplôme Bac+5 Informatique | 2018 - 2020"
+    }
+  ],
+  "skills": [
+    {
+      "label": "Back-end & API",
+      "details": "Symfony, Spring Boot, FastAPI, APIs REST/SOAP, API versioning, OAuth2, JWT, cURL, Web scraping, automatisation, Microservices, Design Patterns"
+    },
+    {
+      "label": "Bases de données",
+      "details": "SQL, optimisation, Doctrine, PostgreSQL"
+    },
+    {
+      "label": "Front-end",
+      "details": "JavaScript, jQuery, Vue.js"
+    },
+    {
+      "label": "Langages",
+      "details": "PHP, Python, Java, Kotlin, LUA, Shell/Bash Scripting"
+    },
+    {
+      "label": "DevOps & outils",
+      "details": "Docker, Kubernetes, Linux, nginx, CI/CD, Git"
+    },
+    {
+      "label": "Méthodes",
+      "details": "Agile/Scrum, gestion de projets, Testing"
+    }
+  ],
+  "projects": [],
+  "hobbies": "",
+  "projects_period": "",
+  "target_company": "",
+  "target_role": ""
+}

@@ -16,6 +16,7 @@ from markupsafe import Markup, escape
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 BASE_CV_PATH = PROJECT_DIR / "data" / "cv_base.json"
+BASE_CV_EXAMPLE_PATH = PROJECT_DIR / "data" / "cv_base.json.example"
 _DLL_DIRECTORY_HANDLES: list[object] = []
 REQUIRED_CV_FIELDS = (
     "name",
@@ -268,6 +269,8 @@ def prepare_cv_data(data: dict[str, Any]) -> dict[str, Any]:
 
 def load_base_cv_data() -> dict[str, Any]:
     """Load the local editable JSON CV data."""
+    if not BASE_CV_PATH.is_file() and BASE_CV_EXAMPLE_PATH.is_file():
+        return json.loads(BASE_CV_EXAMPLE_PATH.read_text(encoding="utf-8"))
     return json.loads(BASE_CV_PATH.read_text(encoding="utf-8"))
 
 
