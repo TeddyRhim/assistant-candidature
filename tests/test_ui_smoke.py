@@ -13,7 +13,7 @@ from src.config import DATA_DIRECTORY_ENV
 from src.db import create_database_engine, initialize_database, save_profile
 from src.models import JobOfferData, ProfileData, ResumeVersion, SkillRating
 from src.services.dossier_generator import prepare_dossier_for_offer
-from src.services.job_offers import create_offer
+from src.services.job_offers import create_offer, list_offers
 
 APP_PATH = str(Path(__file__).parents[1] / "src" / "app.py")
 
@@ -102,3 +102,49 @@ def test_application_dialog_shows_documents_and_send_button(seeded_data: Path) -
     assert not at.exception
     assert any(button.key.startswith("queue_sent_") for button in at.button)
     assert "Lettre à relire" in [tab.label for tab in at.tabs]
+
+
+@pytest.mark.parametrize(
+    ("url_path", "title"),
+    [
+        ("veille", "Veille"),
+        ("reglages", "Réglages"),
+        ("recherche", "Recherche d'offres en ligne"),
+        ("suivi", "Suivi des candidatures"),
+    ],
+)
+def test_secondary_pages_render(seeded_data: Path, url_path: str, title: str) -> None:
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, url_path)
+    assert not at.exception
+    assert at.title[0].value == title
+
+
+def test_settings_page_lists_sources_without_secrets(seeded_data: Path) -> None:
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "reglages")
+    text = _messages(at.markdown)
+    for source in ("Adzuna", "La Bonne Boîte", "France Travail", "Mailjet"):
+        assert source in text
+
+
+def test_applications_board_changes_status(seeded_data: Path) -> None:
+    from src.services.applications import list_applications
+    from src.services.send_queue import mark_offer_sent
+
+    engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
+    offer = list_offers(engine)[0]
+    mark_offer_sent(engine, offer.id)
+    application = list_applications(engine)[0]
+    engine.dispose()
+
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "suivi")
+    assert not at.exception
+    selector = next(box for box in at.selectbox if box.key == f"status_{application.id}")
+    selector.select("Entretien").run()
+    assert not at.exception
+
+    engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
+    assert list_applications(engine)[0].status == "Entretien"
+    engine.dispose()

@@ -107,3 +107,24 @@ def test_deleting_offer_keeps_application_as_spontaneous_outreach(tmp_path) -> N
     assert records[0].id == application.id
     assert records[0].job_offer_id is None
     engine.dispose()
+
+
+def test_set_application_status_fills_sent_date_once(tmp_path) -> None:
+    from src.services.applications import ApplicationNotFound, set_application_status
+
+    engine = make_engine(tmp_path)
+    company = make_company(engine)
+    application = create_application(
+        engine, ApplicationData(company_id=company.id, role="Développeur backend")
+    )
+
+    sent = set_application_status(engine, application.id, "Envoyée")
+    assert sent.status == "Envoyée"
+    assert sent.applied_on is not None
+
+    kept = set_application_status(engine, application.id, "Entretien")
+    assert kept.status == "Entretien"
+    assert kept.applied_on == sent.applied_on
+
+    with pytest.raises(ApplicationNotFound):
+        set_application_status(engine, "0" * 32, "Refusée")

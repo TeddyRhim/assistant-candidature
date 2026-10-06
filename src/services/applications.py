@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from src.models import Application, ApplicationData, Company, JobOffer
+from src.models import Application, ApplicationData, ApplicationStatus, Company, JobOffer
 
 
 class ApplicationNotFound(LookupError):
@@ -44,6 +44,20 @@ def update_application(engine: Engine, application_id: str, data: ApplicationDat
         _validate_references(session, data)
         for field, value in data.model_dump().items():
             setattr(application, field, value)
+    return application
+
+
+def set_application_status(
+    engine: Engine, application_id: str, status: ApplicationStatus
+) -> Application:
+    """Change seulement le statut ; une candidature passée à « Envoyée » reçoit sa date d'envoi."""
+    with Session(engine, expire_on_commit=False) as session, session.begin():
+        application = session.get(Application, application_id)
+        if application is None:
+            raise ApplicationNotFound("Cette candidature n'existe plus.")
+        application.status = status
+        if status == "Envoyée" and not application.applied_on:
+            application.applied_on = date.today().isoformat()
     return application
 
 

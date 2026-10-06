@@ -44,6 +44,7 @@ from src.services.applications import (
     create_application,
     delete_application,
     list_applications,
+    set_application_status,
     update_application,
 )
 from src.services.companies import (
@@ -107,6 +108,12 @@ from src.services.job_sources.adzuna import (
 )
 from src.services.job_sources.base import SourceListing
 from src.services.job_sources.bonne_boite import (
+    BONNE_BOITE_SCOPES,
+    BonneBoiteCompany,
+    promote_bonne_boite_company,
+    search_bonne_boite,
+)
+from src.services.job_sources.bonne_boite import (
     DEFAULT_DEPARTMENTS as BONNE_BOITE_DEFAULT_DEPARTMENTS,
 )
 from src.services.job_sources.bonne_boite import (
@@ -118,18 +125,18 @@ from src.services.job_sources.bonne_boite import (
 from src.services.job_sources.bonne_boite import (
     SUPPORTED_DEPARTMENTS as BONNE_BOITE_SUPPORTED_DEPARTMENTS,
 )
-from src.services.job_sources.bonne_boite import (
-    BonneBoiteCompany,
-    promote_bonne_boite_company,
-    search_bonne_boite,
-)
 from src.services.job_sources.france_travail import (
     DEPARTMENT_NAMES as FRANCE_TRAVAIL_DEPARTMENT_NAMES,
 )
 from src.services.job_sources.france_travail import (
+    FRANCE_TRAVAIL_FALLBACK_SCOPE,
+    FRANCE_TRAVAIL_SCOPE,
+    search_france_travail_for_profile,
+)
+from src.services.job_sources.france_travail import (
     PUBLISHED_SINCE_CHOICES as FRANCE_TRAVAIL_PUBLISHED_SINCE_CHOICES,
 )
-from src.services.job_sources.france_travail import search_france_travail_for_profile
+from src.services.job_sources.france_travail import get_access_token as get_france_travail_token
 from src.services.job_sources.greenhouse import (
     GREENHOUSE_DESCRIPTOR,
     extract_greenhouse_board_token,
@@ -192,7 +199,7 @@ from src.services.tailored_resumes import (
     validate_tailored_resume_json,
 )
 
-st.set_page_config(page_title="Assistant candidatures", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="Assistant candidatures", layout="wide")
 
 CONTRACT_TYPES = ["CDI", "CDD", "Freelance", "Stage", "Alternance", "Autre"]
 SKILL_CATEGORIES: list[SkillCategory] = [
@@ -278,7 +285,9 @@ def show_home(engine: Engine, profile: ProfileData) -> None:
                 f"{offer.company or 'Entreprise non précisée'}  \n"
                 f"{_score_badge(item.score)} {ready}"
             )
-            columns[1].page_link(PAGES["queue"], label="Ouvrir la file d'envoi", icon="📨")
+            columns[1].page_link(
+                PAGES["queue"], label="Ouvrir la file d'envoi", icon=":material/arrow_forward:"
+            )
     if len(queue) > 3:
         st.caption(f"{len(queue) - 3} autre(s) offre(s) dans la file d'envoi.")
 
@@ -286,7 +295,7 @@ def show_home(engine: Engine, profile: ProfileData) -> None:
     last = watcher.last_result
     with st.container(border=True):
         columns = st.columns([5, 2], vertical_alignment="center")
-        status = "🟢 Veille active" if watcher.is_active else "⚪ Veille inactive"
+        status = "Veille active" if watcher.is_active else "Veille inactive"
         detail = (
             f"dernier cycle {last.started_at[:16].replace('T', ' ')} UTC · "
             f"{last.new_offers_imported} nouvelle(s) offre(s)"
@@ -294,7 +303,9 @@ def show_home(engine: Engine, profile: ProfileData) -> None:
             else "aucun cycle lancé depuis le démarrage de l'application"
         )
         columns[0].markdown(f"**{status}** — {detail}")
-        columns[1].page_link(PAGES["search"], label="Gérer la veille", icon="🔭")
+        columns[1].page_link(
+            PAGES["watcher"], label="Gérer la veille", icon=":material/arrow_forward:"
+        )
 
     with st.expander("Profil de recherche"):
         st.write(profile.target_role)
@@ -907,14 +918,95 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
                     st.rerun()
 
 
+def show_watcher_page(engine: Engine, profile: ProfileData) -> None:
+    st.title("Veille")
+    _show_job_watcher_tab(engine, profile)
+
+
+def _source_secrets() -> dict[str, object]:
+    try:
+        return {
+            "ADZUNA_APP_ID": st.secrets.get("ADZUNA_APP_ID", ""),
+            "ADZUNA_APP_KEY": st.secrets.get("ADZUNA_APP_KEY", ""),
+            **_france_travail_secrets(),
+        }
+    except StreamlitSecretNotFoundError:
+        return {}
+
+
+def _check_france_travail_api(scopes: tuple[str, ...], api_label: str) -> tuple[bool, str]:
+    client_id, client_secret = get_france_travail_credentials(_source_secrets())
+    try:
+        get_france_travail_token(client_id, client_secret, scopes=scopes, api_label=api_label)
+    except JobSourceError as error:
+        return False, str(error)
+    return True, "Connexion réussie."
+
+
+def show_settings_page() -> None:
+    st.title("Réglages")
+    st.caption(
+        "État des sources de données. Les clés se renseignent dans `.streamlit/secrets.toml` "
+        "(fichier local, jamais publié) ou dans des variables d'environnement."
+    )
+    secrets = _source_secrets()
+    adzuna_id, adzuna_key = get_adzuna_credentials(secrets)
+    ft_id, ft_secret = get_france_travail_credentials(secrets)
+    ft_ready = bool(ft_id and ft_secret)
+    mailjet_ready = all(get_mailjet_settings(secrets)[:3])
+
+    sources = [
+        (
+            "Adzuna",
+            "adzuna",
+            bool(adzuna_id and adzuna_key),
+            None,
+            "Recherche d'offres par mots-clés.",
+        ),
+        (
+            "La Bonne Boîte",
+            "lbb",
+            ft_ready,
+            BONNE_BOITE_SCOPES,
+            "Entreprises à fort potentiel d'embauche (identifiants France Travail).",
+        ),
+        (
+            "France Travail, offres d'emploi",
+            "ft",
+            ft_ready,
+            (FRANCE_TRAVAIL_SCOPE, FRANCE_TRAVAIL_FALLBACK_SCOPE),
+            "Offres avec texte complet (l'accès à l'API se demande sur francetravail.io).",
+        ),
+        ("Mailjet", "mailjet", mailjet_ready, None, "Envoi d'e-mails depuis l'application."),
+    ]
+    for label, key, configured, scopes, description in sources:
+        with st.container(border=True):
+            columns = st.columns([4, 2, 2], vertical_alignment="center")
+            columns[0].markdown(f"**{label}**  \n:gray[{description}]")
+            columns[1].markdown(
+                ":green-badge[Clés présentes]" if configured else ":red-badge[Clés manquantes]"
+            )
+            if scopes is not None and configured:
+                if columns[2].button("Tester la connexion", key=f"check_{key}"):
+                    st.session_state[f"check_result_{key}"] = _check_france_travail_api(
+                        scopes, label
+                    )
+            result = st.session_state.get(f"check_result_{key}")
+            if result is not None:
+                (st.success if result[0] else st.warning)(result[1])
+    st.caption(
+        "Les valeurs des clés ne sont jamais affichées. Le test de connexion demande seulement "
+        "un jeton d'accès, sans lancer de recherche."
+    )
+
+
 def show_job_search_page(engine: Engine, profile: ProfileData) -> None:
     st.title("Recherche d'offres en ligne")
-    adzuna_tab, france_travail_tab, targeted_tab, watcher_tab = st.tabs(
+    adzuna_tab, france_travail_tab, targeted_tab = st.tabs(
         [
             "Adzuna (recherche par mots-clés)",
             "France Travail",
             "Greenhouse & Lever (collecte ciblée)",
-            "Veille automatique planifiée",
         ]
     )
     with adzuna_tab:
@@ -923,8 +1015,6 @@ def show_job_search_page(engine: Engine, profile: ProfileData) -> None:
         _show_france_travail_tab(engine, profile)
     with targeted_tab:
         _show_targeted_job_boards_tab(engine, profile)
-    with watcher_tab:
-        _show_job_watcher_tab(engine, profile)
 
 
 def _show_adzuna_search_tab(engine: Engine, profile: ProfileData) -> None:
@@ -1652,12 +1742,12 @@ def _show_targeted_job_boards_tab(engine: Engine, profile: ProfileData) -> None:
                 st.write(f"**Contrat estimé :** {listing.contract_type}")
             if listing.relocation_signal == "mentioned":
                 st.success(
-                    f"✈️ **Mention de relocalisation détectée :** "
+                    f"**Mention de relocalisation détectée :** "
                     f"{listing.relocation_evidence}"
                 )
             if listing.public_contact_email:
                 st.info(
-                    f"✉️ **Contact public extrait :** {listing.public_contact_email}"
+                    f"**Contact public extrait :** {listing.public_contact_email}"
                 )
                 if listing.contact_source_url:
                     st.caption(f"Source du contact : {listing.contact_source_url}")
@@ -1705,9 +1795,9 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
     col_status, col_actions = st.columns([1, 1])
     with col_status:
         if watcher.is_active:
-            st.success("🟢 **Veille automatique en tâche de fond : ACTIVE**")
+            st.success("**Veille automatique : active**")
         else:
-            st.info("⚪ **Veille automatique en tâche de fond : INACTIVE**")
+            st.info("**Veille automatique : inactive**")
 
         last_res = watcher.last_result
         if last_res:
@@ -1728,7 +1818,7 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             if last_res.errors:
                 with st.expander("Avertissements du dernier cycle"):
                     for err in last_res.errors:
-                        st.caption(f"⚠️ {err}")
+                        st.caption(err)
 
     with col_actions:
         try:
@@ -1779,7 +1869,7 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
         )
         if manual_res.get("imported_offer_titles"):
             for title in manual_res["imported_offer_titles"]:
-                st.markdown(f"- ✅ **{title}**")
+                st.markdown(f"- **{title}**")
 
     manual_dossiers = st.session_state.get("manual_dossiers_result")
     if manual_dossiers:
@@ -1791,7 +1881,7 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
         if manual_dossiers.get("errors"):
             with st.expander("Erreurs rencontrées lors de la pré-génération"):
                 for err in manual_dossiers["errors"]:
-                    st.caption(f"⚠️ {err}")
+                    st.caption(err)
 
     st.markdown("---")
     st.subheader("Configuration de la veille")
@@ -3341,47 +3431,51 @@ def _application_form(
     )
 
 
-def show_applications_page(engine: Engine) -> None:
-    st.title("Suivi des candidatures")
-    st.write(
-        "Enregistre les candidatures liées à une offre ou les démarches spontanées, "
-        "avec leur statut et prochaine action."
-    )
-    companies = list_companies(engine)
-    offers = list_offers(engine)
-    if not companies:
-        st.info("Ajoute d'abord une entreprise vérifiée dans « Entreprises à prospecter ».")
-        return
 
-    company_options = {company.id: f"{company.name} — {company.location}" for company in companies}
-    offer_options = {
-        offer.id: f"{offer.title} — {offer.company or offer.location or 'Offre'}"
-        for offer in offers
-    }
-    with st.expander("Ajouter une candidature", expanded=not list_applications(engine)):
-        try:
-            data = _application_form("new_application", company_options, offer_options)
-            if data is not None:
-                create_application(engine, data)
-                st.success("Candidature enregistrée.")
-                st.rerun()
-        except ValidationError as error:
-            for issue in error.errors():
-                st.error(issue["msg"])
-        except ApplicationReferenceNotFound as error:
-            st.error(str(error))
+BOARD_STATUSES: list[ApplicationStatus] = ["À préparer", "Prête à envoyer", "Envoyée", "Entretien"]
+CLOSED_STATUSES: list[ApplicationStatus] = ["Refusée", "Retirée"]
 
-    applications = list_applications(engine)
-    st.subheader(f"Candidatures enregistrées ({len(applications)})")
-    if not applications:
-        st.info("Aucune candidature suivie pour le moment.")
-        return
 
-    companies_by_id = {company.id: company for company in companies}
-    for application in applications:
-        company = companies_by_id.get(application.company_id)
-        company_label = company.name if company else "Entreprise supprimée"
-        with st.expander(f"{application.role} — {company_label} · {application.status}"):
+def _change_application_status(engine: Engine, application_id: str) -> None:
+    status = st.session_state[f"status_{application_id}"]
+    try:
+        set_application_status(engine, application_id, status)
+    except ApplicationNotFound as error:
+        st.session_state["queue_flash"] = str(error)
+    else:
+        st.session_state["queue_flash"] = f"Statut mis à jour : {status}."
+
+
+def _show_application_card(
+    engine: Engine,
+    application,
+    company_label: str,
+    company_options: dict[str, str],
+    offer_options: dict[str, str],
+) -> None:
+    with st.container(border=True):
+        st.markdown(f"**{application.role}**  \n:gray[{company_label}]")
+        details = []
+        if application.applied_on:
+            details.append(f"Envoyée le {application.applied_on}")
+        if application.next_action_on and application.status == "Envoyée":
+            overdue = application.next_action_on <= date.today().isoformat()
+            badge = ":red-badge[Relance due]" if overdue else ":gray-badge[Relance prévue]"
+            details.append(f"{badge} {application.next_action_on}")
+        if details:
+            st.caption(" · ".join(details))
+        st.selectbox(
+            "Statut",
+            options=APPLICATION_STATUSES,
+            index=APPLICATION_STATUSES.index(application.status)
+            if application.status in APPLICATION_STATUSES
+            else 0,
+            key=f"status_{application.id}",
+            label_visibility="collapsed",
+            on_change=_change_application_status,
+            args=(engine, application.id),
+        )
+        with st.popover("Détails", width="stretch"):
             if application.job_offer_id and application.job_offer_id in offer_options:
                 st.caption(f"Offre : {offer_options[application.job_offer_id]}")
             else:
@@ -3407,25 +3501,78 @@ def show_applications_page(engine: Engine) -> None:
                 )
                 if data is not None:
                     update_application(engine, application.id, data)
-                    st.success("Candidature mise à jour.")
+                    st.session_state["queue_flash"] = "Candidature mise à jour."
                     st.rerun()
             except ValidationError as error:
                 for issue in error.errors():
                     st.error(issue["msg"])
             except (ApplicationNotFound, ApplicationReferenceNotFound) as error:
                 st.error(str(error))
-
             if st.button(
-                "Supprimer cette candidature",
-                key=f"delete_application_{application.id}",
+                "Supprimer cette candidature", key=f"delete_application_{application.id}"
             ):
                 try:
                     delete_application(engine, application.id)
                 except ApplicationNotFound as error:
                     st.error(str(error))
                 else:
-                    st.success("Candidature supprimée.")
+                    st.session_state["queue_flash"] = "Candidature supprimée."
                     st.rerun()
+
+
+def show_applications_page(engine: Engine) -> None:
+    st.title("Suivi des candidatures")
+    companies = list_companies(engine)
+    offers = list_offers(engine)
+    if not companies:
+        st.info("Ajoute d'abord une entreprise vérifiée dans « Entreprises à prospecter ».")
+        return
+
+    company_options = {company.id: f"{company.name} — {company.location}" for company in companies}
+    offer_options = {
+        offer.id: f"{offer.title} — {offer.company or offer.location or 'Offre'}"
+        for offer in offers
+    }
+    applications = list_applications(engine)
+    with st.expander("Ajouter une candidature", expanded=not applications):
+        try:
+            data = _application_form("new_application", company_options, offer_options)
+            if data is not None:
+                create_application(engine, data)
+                st.session_state["queue_flash"] = "Candidature enregistrée."
+                st.rerun()
+        except ValidationError as error:
+            for issue in error.errors():
+                st.error(issue["msg"])
+        except ApplicationReferenceNotFound as error:
+            st.error(str(error))
+
+    if not applications:
+        st.info("Aucune candidature suivie pour le moment.")
+        return
+
+    companies_by_id = {company.id: company for company in companies}
+
+    def label_for(application) -> str:
+        company = companies_by_id.get(application.company_id)
+        return company.name if company else "Entreprise supprimée"
+
+    columns = st.columns(len(BOARD_STATUSES))
+    for column, status in zip(columns, BOARD_STATUSES, strict=True):
+        column_items = [a for a in applications if a.status == status]
+        with column:
+            st.markdown(f"**{status}** ({len(column_items)})")
+            for application in column_items:
+                _show_application_card(
+                    engine, application, label_for(application), company_options, offer_options
+                )
+    closed = [a for a in applications if a.status in CLOSED_STATUSES]
+    if closed:
+        with st.expander(f"Clôturées ({len(closed)})"):
+            for application in closed:
+                _show_application_card(
+                    engine, application, label_for(application), company_options, offer_options
+                )
 
 
 def _build_queue_documents(engine: Engine, offer) -> dict[str, object]:
@@ -3575,7 +3722,7 @@ def _application_dialog(engine: Engine, profile: ProfileData, offer_id: str) -> 
     letter = get_cover_letter(engine, job_offer_id=offer.id)
     truncated = is_probably_truncated(offer)
     letter_tab, text_tab = st.tabs(
-        ["Lettre à relire", "Texte de l'annonce" + (" ⚠️ tronqué" if truncated else "")]
+        ["Lettre à relire", "Texte de l'annonce" + (" (tronqué)" if truncated else "")]
     )
     with letter_tab:
         if letter is not None:
@@ -3621,7 +3768,7 @@ def _show_queue_card(engine: Engine, profile: ProfileData, item: QueueItem) -> N
         columns = st.columns([6, 3], vertical_alignment="center")
         badges = [_score_badge(item.score)]
         if offer.status == "Intéressante":
-            badges.append(":yellow-badge[⭐ Intéressante]")
+            badges.append(":yellow-badge[Intéressante]")
         badges.append(
             ":green-badge[Dossier prêt]" if item.is_ready else ":gray-badge[Dossier à préparer]"
         )
@@ -3721,7 +3868,7 @@ def _show_offers_queue(engine: Engine, profile: ProfileData) -> None:
     if ready_count < len(queue):
         st.caption(
             "Les dossiers incomplets se préparent offre par offre, ou en lot depuis "
-            "la page « Recherche en ligne » (onglet Veille automatique planifiée)."
+            "la page « Veille »."
         )
     for item in queue[:limit]:
         _show_queue_card(engine, profile, item)
@@ -3838,7 +3985,7 @@ def _show_spontaneous_card(engine: Engine, profile: ProfileData, item: Spontaneo
             key=f"spont_role_{company.id}",
         )
         if st.button(
-            "3. ✅ J'ai envoyé ma candidature",
+            "3. J'ai envoyé ma candidature",
             key=f"spont_sent_{company.id}",
             type="primary",
             help=f"Crée la candidature « Envoyée » avec une relance dans {FOLLOW_UP_DAYS} jours.",
@@ -3891,74 +4038,70 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+def _page(callback, title: str, icon: str, url_path: str, *, default: bool = False) -> st.Page:
+    return st.Page(
+        callback, title=title, icon=f":material/{icon}:", url_path=url_path, default=default
+    )
+
+
 PAGES: dict[str, st.Page] = {
-    "home": st.Page(
-        lambda: show_home(engine, profile),
-        title="Aujourd'hui",
-        icon="🏠",
-        url_path="aujourdhui",
-        default=True,
+    "home": _page(
+        lambda: show_home(engine, profile), "Aujourd'hui", "home", "aujourdhui", default=True
     ),
-    "profile": st.Page(
-        lambda: show_profile_form(engine, profile), title="Mon profil", icon="👤", url_path="profil"
-    ),
-    "resume": st.Page(
-        lambda: show_resume_page(engine), title="CV de référence", icon="📄", url_path="cv"
-    ),
-    "offers": st.Page(
-        lambda: show_offers_page(engine, profile), title="Offres", icon="📋", url_path="offres"
-    ),
-    "search": st.Page(
+    "profile": _page(lambda: show_profile_form(engine, profile), "Mon profil", "person", "profil"),
+    "resume": _page(lambda: show_resume_page(engine), "CV de référence", "description", "cv"),
+    "offers": _page(lambda: show_offers_page(engine, profile), "Offres", "list_alt", "offres"),
+    "search": _page(
         lambda: show_job_search_page(engine, profile),
-        title="Recherche en ligne",
-        icon="🔭",
-        url_path="recherche",
+        "Recherche en ligne",
+        "travel_explore",
+        "recherche",
     ),
-    "discovery": st.Page(
+    "watcher": _page(lambda: show_watcher_page(engine, profile), "Veille", "radar", "veille"),
+    "discovery": _page(
         lambda: show_company_discovery_page(engine),
-        title="Découvrir des entreprises",
-        icon="🧭",
-        url_path="decouvrir",
+        "Découvrir des entreprises",
+        "explore",
+        "decouvrir",
     ),
-    "companies": st.Page(
+    "companies": _page(
         lambda: show_companies_page(engine, profile),
-        title="Entreprises à prospecter",
-        icon="🏢",
-        url_path="entreprises",
+        "Entreprises à prospecter",
+        "business",
+        "entreprises",
     ),
-    "queue": st.Page(
-        lambda: show_send_queue_page(engine, profile),
-        title="File d'envoi",
-        icon="📨",
-        url_path="file-d-envoi",
+    "queue": _page(
+        lambda: show_send_queue_page(engine, profile), "File d'envoi", "outbox", "file-d-envoi"
     ),
-    "tailored": st.Page(
+    "tailored": _page(
         lambda: show_tailored_resume_page(engine, profile),
-        title="CV par offre",
-        icon="🎯",
-        url_path="cv-par-offre",
+        "CV par offre",
+        "target",
+        "cv-par-offre",
     ),
-    "spontaneous": st.Page(
+    "spontaneous": _page(
         lambda: show_cover_letter_page(engine, profile),
-        title="Candidature spontanée",
-        icon="✉️",
-        url_path="spontanee",
+        "Candidature spontanée",
+        "edit_note",
+        "spontanee",
     ),
-    "email": st.Page(
-        lambda: show_email_page(engine), title="Envoyer un e-mail", icon="📤", url_path="email"
+    "email": _page(lambda: show_email_page(engine), "Envoyer un e-mail", "mail", "email"),
+    "applications": _page(
+        lambda: show_applications_page(engine), "Suivi des candidatures", "view_kanban", "suivi"
     ),
-    "applications": st.Page(
-        lambda: show_applications_page(engine),
-        title="Suivi des candidatures",
-        icon="📊",
-        url_path="suivi",
-    ),
+    "settings": _page(show_settings_page, "Réglages", "tune", "reglages"),
 }
 navigation = st.navigation(
     {
         "Accueil": [PAGES["home"]],
         "Préparer": [PAGES["profile"], PAGES["resume"]],
-        "Trouver": [PAGES["offers"], PAGES["search"], PAGES["discovery"], PAGES["companies"]],
+        "Trouver": [
+            PAGES["offers"],
+            PAGES["search"],
+            PAGES["watcher"],
+            PAGES["discovery"],
+            PAGES["companies"],
+        ],
         "Candidater": [
             PAGES["queue"],
             PAGES["tailored"],
@@ -3966,11 +4109,12 @@ navigation = st.navigation(
             PAGES["email"],
             PAGES["applications"],
         ],
+        "Configuration": [PAGES["settings"]],
     }
 )
 flash = st.session_state.pop("queue_flash", None)
 if flash:
-    st.toast(flash, icon="✅")
+    st.toast(flash)
 navigation.run()
 
 st.caption("Application locale — les bases, CV importés et exports restent sur cet ordinateur.")
