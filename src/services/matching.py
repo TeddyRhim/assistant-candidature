@@ -94,6 +94,9 @@ ROLE_STOP_WORDS = {
     "senior",
     "junior",
 }
+STRONG_SKILL_LEVEL = 7
+# Compétences trop génériques pour caractériser un intitulé de poste.
+GENERIC_TITLE_SKILLS = frozenset({"sql", "git", "curl", "jwt", "linux"})
 SOFTWARE_ACTIVITY_CODE_PATTERN = re.compile(r"\b62\.(?:01Z|02A|02B|03Z|09Z)\b", re.I)
 SOFTWARE_ACTIVITY_TERMS = (
     "programmation informatique",
@@ -132,7 +135,7 @@ def assess_offer_fit(offer: JobOfferData, profile: ProfileData) -> OfferFitAsses
         weighted_components.append((skills.match_percentage, 60))
         evaluated_criteria.append("compétences")
 
-    role_percentage = _role_similarity(offer.title, profile.target_role)
+    role_percentage = _role_similarity(offer.title, profile)
     if role_percentage is not None:
         weighted_components.append((role_percentage, 20))
         evaluated_criteria.append("intitulé")
@@ -236,12 +239,32 @@ def assess_company_fit(
     )
 
 
-def _role_similarity(title: str, target_role: str) -> int | None:
+def _role_similarity(title: str, profile: ProfileData) -> int | None:
+    """Proximité du titre avec le poste visé, ou avec la stack forte du profil.
+
+    Un titre comme « Développeur PHP Symfony » partage peu de mots avec un intitulé cible
+    générique (« Développeur backend / full-stack ») : le recoupement des mots est donc
+    complété par les compétences fortes du profil citées dans le titre.
+    """
     title_terms = _meaningful_terms(title)
-    target_terms = _meaningful_terms(target_role)
+    target_terms = _meaningful_terms(profile.target_role)
     if not title_terms or not target_terms:
         return None
-    return round(len(title_terms & target_terms) / len(target_terms) * 100)
+    overlap = round(len(title_terms & target_terms) / len(target_terms) * 100)
+    return max(overlap, _title_stack_score(title, profile))
+
+
+def _title_stack_score(title: str, profile: ProfileData) -> int:
+    """70 % si le titre cite une compétence forte du profil, 100 % s'il en cite deux."""
+    cited = {
+        _normalize_skill_name(skill.name)
+        for skill in profile.skills
+        if skill.level_max >= STRONG_SKILL_LEVEL
+        and _normalize_skill_name(skill.name) in SKILL_ALIASES
+        and _normalize_skill_name(skill.name) not in GENERIC_TITLE_SKILLS
+        and _find_evidence(title, skill.name) is not None
+    }
+    return {0: 0, 1: 70}.get(len(cited), 100)
 
 
 def _meaningful_terms(value: str) -> set[str]:

@@ -176,6 +176,35 @@ def test_offer_fit_weights_skills_and_adds_target_role_contract_and_location() -
     )
 
 
+def _stack_profile() -> ProfileData:
+    return ProfileData(
+        target_role="Développeur backend / full-stack à dominante backend",
+        skills=[
+            SkillRating(name="PHP", category="Forte", level_min=8, level_max=8),
+            SkillRating(name="Symfony", category="Forte", level_min=8, level_max=8),
+            SkillRating(name="SQL", category="Forte", level_min=7, level_max=7),
+            SkillRating(name="Python", category="Intermédiaire", level_min=5, level_max=5),
+        ],
+    )
+
+
+def test_role_score_rewards_strong_stack_skills_cited_in_title() -> None:
+    profile = _stack_profile()
+
+    def role(title: str) -> int | None:
+        return assess_offer_fit(JobOfferData(title=title, description="x"), profile).role_percentage
+
+    # Une compétence forte dans le titre : 70 % au lieu de 20 % (seul « développeur » recoupe).
+    assert role("Développeur PHP") == 70
+    # Deux compétences fortes : correspondance complète.
+    assert role("Développeur PHP Symfony (IT)") == 100
+    # Compétence intermédiaire ou générique (SQL) : pas de bonus de pile.
+    assert role("Développeur Python") == 20
+    assert role("Consultant DBA SQL Server") == 0
+    # Le recoupement avec l'intitulé cible reste prioritaire quand il est supérieur.
+    assert role("Développeur backend full stack") == 80
+
+
 def test_hybrid_work_does_not_satisfy_remote_only_preference() -> None:
     profile = ProfileData(
         target_role="Développeur",
