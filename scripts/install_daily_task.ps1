@@ -1,3 +1,6 @@
+# NOTE : optionnel. La planification quotidienne a été prévue et fonctionne, mais elle n'est pas
+# nécessaire : la veille se lance à la demande (bouton de la page Veille ou
+# `uv run python -m src.cli daily`). Aucune tâche n'est installée par défaut.
 # Crée (ou remplace) la tâche planifiée Windows qui lance la récupération quotidienne.
 #   .\scripts\install_daily_task.ps1                 -> tous les jours à 08:00
 #   .\scripts\install_daily_task.ps1 -At "07:30"     -> autre heure

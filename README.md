@@ -26,7 +26,9 @@ L'interface s'ouvre dans le navigateur et reste accessible localement. Les choix
 importe les offres pertinentes puis prépare CV et lettre. C'est le même traitement que le bouton
 « Récupérer les annonces et préparer les dossiers ». Aucune candidature n'est envoyée.
 
-Pour le lancer chaque jour avec le Planificateur de tâches Windows :
+La planification automatique est **optionnelle** : elle est prévue et fonctionne, mais elle n'est
+pas nécessaire, la veille se lançant à la demande. Aucune tâche n'est installée par défaut.
+Pour la lancer chaque jour avec le Planificateur de tâches Windows :
 
 ```powershell
 .\scripts\install_daily_task.ps1              # tous les jours à 08:00

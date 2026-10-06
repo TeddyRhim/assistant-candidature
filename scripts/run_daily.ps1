@@ -1,3 +1,6 @@
+# NOTE : optionnel. La planification quotidienne a été prévue et fonctionne, mais elle n'est pas
+# nécessaire : la veille se lance à la demande (bouton de la page Veille ou
+# `uv run python -m src.cli daily`). Aucune tâche n'est installée par défaut.
 # Lance la récupération quotidienne des annonces et la préparation des dossiers.
 # Appelé par la tâche planifiée Windows ; peut aussi être lancé à la main.
 $ErrorActionPreference = "Stop"
