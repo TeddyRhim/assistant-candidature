@@ -184,6 +184,18 @@ def test_default_exclusions_filter_lead_positions() -> None:
     assert find_excluded_keyword("Développeur Leadership Tools", keywords) is None
 
 
+def test_default_exclusions_filter_senior_positions() -> None:
+    from src.services.job_watcher import DEFAULT_EXCLUDED_TITLE_KEYWORDS
+
+    keywords = list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
+    assert find_excluded_keyword("Développeur Symfony Senior", keywords) == "senior"
+    assert find_excluded_keyword("Ingénieur Python Sénior", keywords) == "sénior"
+    assert find_excluded_keyword("Développeur PHP confirmé(e) F/H", keywords) == "confirmé"
+    assert find_excluded_keyword("Expert PrestaShop", keywords) == "expert"
+    assert find_excluded_keyword("Développeur PHP Symfony junior", keywords) is None
+    assert find_excluded_keyword("Développeur PHP H/F", keywords) is None
+
+
 def test_find_excluded_keyword_matches_whole_words_only() -> None:
     keywords = ["stage", "java", "freelance"]
 
