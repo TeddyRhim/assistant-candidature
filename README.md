@@ -84,6 +84,15 @@ La rubrique **Recherche en ligne** propose deux modes de collecte :
 - **Adzuna (recherche par mots-clés)** : lance manuellement une recherche après configuration locale des identifiants (`ADZUNA_APP_ID` et `ADZUNA_APP_KEY`). Elle lance une requête distincte pour chacune des huit compétences prioritaires du profil, plus une requête pour le poste visé. En local, elle couvre la zone PACA élargie (Nice, Cannes, Var, Marseille) et Paris (classé après le local) ; à l'international, les pays sont choisis individuellement avec filtrage de langue. Les résultats sont dédoublonnés et classés selon la correspondance avec le profil.
 - **Greenhouse & Lever (collecte ciblée par employeur)** : interroge directement les API publiques officielles en lecture seule des tableaux de recrutement d'entreprises cibles, sans clé API ni scraping. L'identifiant du tableau peut être saisi sous forme de slug ou d'URL complète (ex. `ateliertech` ou `https://boards.greenhouse.io/ateliertech`, `exampleco` ou `https://jobs.lever.co/exampleco` avec support des instances européennes `api.eu.lever.co`). Le connecteur nettoie le texte, détecte les contrats, les mentions de relocalisation et les e-mails de contact sourcés. Les offres peuvent être filtrées par mot-clé et importées individuellement ou en lot avec liaison automatique aux fiches entreprises locales.
 
+La page **File d'envoi** (rubrique Candidatures) regroupe les offres à traiter, classées par score
+global, avec l'état de leur CV et de leur lettre. Pour chaque offre : ouvre l'annonce, prépare puis
+télécharge les PDF (le CV ciblé et la lettre enregistrés), relis la lettre, postule toi-même sur le
+site de l'employeur, puis clique sur **J'ai envoyé ma candidature**. Cela crée la candidature
+« Envoyée » avec une relance à 7 jours et retire l'offre de la file. Si l'entreprise n'a pas de
+fiche, une fiche minimale est créée à partir de l'annonce (sans contact). Les offres peuvent être
+marquées « Intéressante » ou écartées. Les relances échues apparaissent en tête de page. Rien
+n'est envoyé automatiquement.
+
 Les annonces importées restent modifiables, supprimables et utilisables pour générer un CV et une lettre adaptés. Aucune offre n'est enregistrée sans action explicite de l'utilisateur.
 
 Dans **CV par offre → Batch de CV**, les offres enregistrées sont affichées en cartes sur quatre

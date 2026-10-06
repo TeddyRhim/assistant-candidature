@@ -74,7 +74,7 @@ from src.services.cv_renderer import (
     tailored_cv_filename,
     validate_base_cv_json,
 )
-from src.services.dossier_generator import prepare_pending_dossiers
+from src.services.dossier_generator import prepare_dossier_for_offer, prepare_pending_dossiers
 from src.services.email_delivery import EmailDeliveryError, send_application_email
 from src.services.job_offers import (
     DuplicateOfferURL,
@@ -125,6 +125,17 @@ from src.services.resume_import import (
     extract_resume_text,
     list_resume_versions,
     save_resume_version,
+)
+from src.services.send_queue import (
+    FOLLOW_UP_DAYS,
+    OfferAlreadySent,
+    QueueItem,
+    build_send_queue,
+    due_follow_ups,
+    mark_followed_up,
+    mark_offer_sent,
+    offer_to_data,
+    set_offer_status,
 )
 from src.services.tailored_resumes import (
     TailoredResumeError,
@@ -2945,6 +2956,206 @@ def show_applications_page(engine: Engine) -> None:
                     st.rerun()
 
 
+def _build_queue_documents(engine: Engine, offer) -> dict[str, object]:
+    """Génère à la demande les PDF du CV ciblé et de la lettre déjà enregistrés."""
+    documents: dict[str, object] = {"cv": None, "letter": None, "errors": []}
+    errors: list[str] = documents["errors"]  # type: ignore[assignment]
+    resume = get_tailored_resume(engine, offer.id)
+    if resume is not None:
+        try:
+            normalized = validate_tailored_resume_json(resume.content)
+            documents["cv"] = (
+                render_tailored_resume_pdf(normalized),
+                tailored_cv_filename(
+                    json.loads(normalized),
+                    target_role=offer.title,
+                    target_company=offer.company,
+                ),
+            )
+        except TailoredResumeError as error:
+            errors.append(f"CV : {error}")
+    letter = get_cover_letter(engine, job_offer_id=offer.id)
+    if letter is not None:
+        try:
+            letter_name = tailored_cv_filename(
+                load_base_cv_data(), target_role=offer.title, target_company=offer.company
+            ).replace("-cv-", "-lettre-", 1)
+            documents["letter"] = (render_cover_letter_pdf(letter.content), letter_name)
+        except CoverLetterError as error:
+            errors.append(f"Lettre : {error}")
+    return documents
+
+
+def _show_follow_ups(engine: Engine) -> None:
+    due = due_follow_ups(engine)
+    if not due:
+        return
+    companies_by_id = {company.id: company for company in list_companies(engine)}
+    st.subheader(f"À relancer ({len(due)})")
+    for application in due:
+        company = companies_by_id.get(application.company_id)
+        company_label = company.name if company else "Entreprise supprimée"
+        columns = st.columns([5, 2])
+        columns[0].write(
+            f"**{application.role}** — {company_label}  \n"
+            f"Envoyée le {application.applied_on or '?'} · relance prévue le "
+            f"{application.next_action_on}"
+        )
+        if columns[1].button(
+            f"Relance faite (+{FOLLOW_UP_DAYS} j)",
+            key=f"followed_up_{application.id}",
+        ):
+            try:
+                mark_followed_up(engine, application.id)
+            except ApplicationNotFound as error:
+                st.error(str(error))
+            else:
+                st.session_state["queue_flash"] = "Relance enregistrée."
+                st.rerun()
+    st.markdown("---")
+
+
+def _show_queue_card(engine: Engine, profile: ProfileData, item: QueueItem) -> None:
+    offer = item.offer
+    docs_key = f"queue_docs_{offer.id}"
+    with st.container(border=True):
+        st.markdown(
+            f"**{normalize_job_title(offer.title)}** — "
+            f"{offer.company or 'Entreprise non précisée'}"
+        )
+        details = [f"Score {item.score} %", offer.location or "Lieu non précisé", offer.source]
+        if offer.contract_type:
+            details.insert(2, offer.contract_type)
+        if offer.status == "Intéressante":
+            details.insert(0, "⭐")
+        st.caption(" · ".join(details))
+        st.caption(
+            f"{'✅' if item.has_resume else '⚠️'} CV ciblé · "
+            f"{'✅' if item.has_letter else '⚠️'} Lettre"
+        )
+        if offer.source.startswith("Adzuna") and len(offer.description) >= 480:
+            st.caption(
+                "Texte d'annonce tronqué par Adzuna : lis l'annonce d'origine avant d'envoyer."
+            )
+
+        actions = st.columns(4)
+        if offer.url:
+            actions[0].link_button("1. Ouvrir l'annonce", offer.url)
+        else:
+            actions[0].caption("Aucun lien enregistré")
+        if item.is_ready:
+            if actions[1].button("2. Préparer les PDF", key=f"queue_pdf_{offer.id}"):
+                st.session_state[docs_key] = _build_queue_documents(engine, offer)
+        elif actions[1].button("Préparer le dossier", key=f"queue_prepare_{offer.id}"):
+            result = prepare_dossier_for_offer(engine, offer.id, offer_to_data(offer), profile)
+            st.session_state["queue_flash"] = (
+                f"Dossier incomplet : {result.error}" if result.error else "Dossier préparé."
+            )
+            st.rerun()
+        if offer.status != "Intéressante" and actions[2].button(
+            "⭐ Intéressante", key=f"queue_star_{offer.id}"
+        ):
+            set_offer_status(engine, offer.id, "Intéressante")
+            st.rerun()
+        if actions[3].button("Écarter", key=f"queue_discard_{offer.id}"):
+            set_offer_status(engine, offer.id, "Écartée")
+            st.session_state["queue_flash"] = "Offre écartée de la file."
+            st.rerun()
+
+        documents = st.session_state.get(docs_key)
+        if documents:
+            downloads = st.columns(2)
+            for column, key, label in (
+                (downloads[0], "cv", "Télécharger le CV (PDF)"),
+                (downloads[1], "letter", "Télécharger la lettre (PDF)"),
+            ):
+                if documents[key]:
+                    data, file_name = documents[key]
+                    column.download_button(
+                        label,
+                        data=data,
+                        file_name=file_name,
+                        mime="application/pdf",
+                        key=f"queue_download_{key}_{offer.id}",
+                    )
+            for message in documents["errors"]:
+                st.warning(message)
+
+        if item.has_letter:
+            letter = get_cover_letter(engine, job_offer_id=offer.id)
+            if letter is not None:
+                with st.expander("Relire la lettre"):
+                    st.text(letter.content)
+
+        st.caption(
+            "Relis le CV et la lettre, envoie-les toi-même sur le site de l'employeur, "
+            "puis enregistre l'envoi."
+        )
+        if st.button(
+            "3. ✅ J'ai envoyé ma candidature",
+            key=f"queue_sent_{offer.id}",
+            type="primary",
+            help=f"Crée la candidature « Envoyée » avec une relance dans {FOLLOW_UP_DAYS} jours.",
+        ):
+            try:
+                mark_offer_sent(engine, offer.id)
+            except (OfferNotFound, OfferAlreadySent) as error:
+                st.error(str(error))
+            else:
+                st.session_state.pop(docs_key, None)
+                st.session_state["queue_flash"] = (
+                    f"Envoi enregistré. Relance prévue dans {FOLLOW_UP_DAYS} jours."
+                )
+                st.rerun()
+
+
+def show_send_queue_page(engine: Engine, profile: ProfileData) -> None:
+    st.title("File d'envoi")
+    st.write(
+        "Les offres les plus pertinentes avec leur CV et leur lettre prêts. L'envoi reste "
+        "manuel : ouvre l'annonce, relis les documents, postule sur le site de l'employeur, "
+        "puis enregistre l'envoi pour déclencher le suivi et la relance."
+    )
+    flash = st.session_state.pop("queue_flash", None)
+    if flash:
+        st.success(flash)
+
+    _show_follow_ups(engine)
+
+    controls = st.columns(2)
+    min_score = controls[0].slider(
+        "Score minimal",
+        min_value=0,
+        max_value=90,
+        value=load_watcher_config().min_match_percentage,
+        step=5,
+        help="Les offres marquées « Intéressante » restent affichées sous ce seuil.",
+    )
+    limit = controls[1].selectbox("Offres affichées", options=[10, 20, 50], index=0)
+    queue = build_send_queue(engine, profile, min_score)
+
+    ready_count = sum(item.is_ready for item in queue)
+    metrics = st.columns(2)
+    metrics[0].metric("Offres à traiter", len(queue))
+    metrics[1].metric("Dossiers complets", ready_count)
+
+    if not queue:
+        st.info(
+            "Aucune offre à traiter à ce seuil. Lance la veille ou baisse le score minimal "
+            "(les offres déjà envoyées ou écartées n'apparaissent pas)."
+        )
+        return
+    if ready_count < len(queue):
+        st.caption(
+            "Les dossiers incomplets se préparent offre par offre, ou en lot depuis "
+            "« Recherche en ligne → Veille automatique planifiée »."
+        )
+    for item in queue[:limit]:
+        _show_queue_card(engine, profile, item)
+    if len(queue) > limit:
+        st.caption(f"{len(queue) - limit} autre(s) offre(s) non affichée(s).")
+
+
 engine = get_engine()
 profile = load_or_seed_profile(engine)
 st.markdown(
@@ -2984,6 +3195,7 @@ with st.sidebar:
             "Entreprises à prospecter",
         ],
         "Candidatures": [
+            "File d'envoi",
             "CV par offre",
             "Candidature spontanée",
             "Envoyer un e-mail",
@@ -3005,6 +3217,8 @@ elif page == "Offres":
     show_offers_page(engine, profile)
 elif page == "Recherche en ligne":
     show_job_search_page(engine, profile)
+elif page == "File d'envoi":
+    show_send_queue_page(engine, profile)
 elif page == "CV par offre":
     show_tailored_resume_page(engine, profile)
 elif page == "Candidature spontanée":
