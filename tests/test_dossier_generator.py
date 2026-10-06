@@ -74,7 +74,7 @@ def test_prepare_dossier_and_batch_pending(tmp_path: Path, monkeypatch) -> None:
     # Créer 2 offres : une qui matche, une qui ne matche pas
     offer_match_data = JobOfferData(
         title="Développeur PHP Symfony Backend",
-        company="TechSolutions",
+        company="Exemple SA",
         description="Nous recherchons un développeur PHP Symfony maîtrisant les API REST.",
     )
     offer_match = create_offer(engine, offer_match_data)

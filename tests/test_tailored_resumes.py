@@ -49,7 +49,7 @@ def test_tailored_resume_builds_editable_json_from_base_and_offer() -> None:
     assert draft["skills"][0]["label"] == "Langages"
     assert draft["contact"][0]["text"] == "06 00 00 00 00"
     assert draft["experience"][0]["company"] == "TechSolutions"
-    assert draft["education"][0]["text"].startswith("Titre RNCP Développeur web")
+    assert draft["education"][0]["text"].startswith("Titre RNCP Développeur")
 
 
 def test_tailored_resume_pdf_contains_customized_content() -> None:

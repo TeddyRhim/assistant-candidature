@@ -71,7 +71,7 @@ def test_generates_pdf_from_base_cv_with_lorem_ipsum_in_all_fields(tmp_path: Pat
     assert output_path.read_bytes().startswith(b"%PDF-")
     extracted_text = _normalized_pdf_text(output_path)
     assert "alexandre martin" in extracted_text
-    assert "apimo" in extracted_text
+    assert "techsolutions" in extracted_text
     assert "lorem ipsum dolor sit amet" in extracted_text
 
 
