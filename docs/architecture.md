@@ -155,7 +155,7 @@ n'est fourni. Voir `docs/job-sources.md` pour les sources examinées et leurs re
 ## Confidentialité et réseau
 
 - L'application doit être utilisable sans réseau après installation.
-- Les collectes d'annonces sont des connecteurs distincts, explicitement déclenchés et limités aux interfaces autorisées (API, flux, import fourni par l'utilisateur) ; aucun déclenchement périodique n'est actuellement configuré.
+- Les collectes d'annonces sont des connecteurs distincts, explicitement déclenchés et limités aux interfaces autorisées (API, flux, import fourni par l'utilisateur) ; la veille planifiée (`services/job_watcher.py`) est un déclenchement périodique opt-in, démarré explicitement par l'utilisateur, qui s'exécute dans le processus Streamlit et s'arrête avec lui.
 - L'envoi par e-mail est individuel et nécessite une confirmation explicite ; aucune candidature n'est soumise automatiquement à un site d'emploi.
 - Un éventuel LLM local sera optionnel et désactivé par défaut ; aucun service distant ne reçoit de document sans consentement explicite.
 - Seules les données de recherche nécessaires sont conservées ; l'utilisateur peut exporter ou supprimer ses données.

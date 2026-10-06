@@ -94,7 +94,10 @@ bouton **Télécharger le CV PDF** ; aucun téléchargement en lot n'est propos�
 de l'annonce.
 
 La recherche Adzuna est lancée manuellement et tourne en arrière-plan pendant que l'interface
-reste navigable ; il n'y a ni planificateur périodique, ni candidature envoyée automatiquement.
+reste navigable. Une **veille automatique planifiée** (Adzuna, Greenhouse, Lever) peut aussi être
+démarrée depuis la page de recherche : elle tourne dans le processus Streamlit (elle s'arrête avec
+lui), relit sa configuration à chaque cycle, importe les offres au-dessus du seuil de pertinence et
+pré-génère CV et lettre. Aucune candidature n'est envoyée automatiquement.
 Le batch prépare et enregistre des CV, mais ne postule pas : il faut relire le CV et la lettre,
 ouvrir l'annonce d'origine, puis soumettre soi-même le dossier sur le site de l'employeur. La
 page **Envoyer un e-mail** permet un envoi individuel après confirmation explicite ; elle ne

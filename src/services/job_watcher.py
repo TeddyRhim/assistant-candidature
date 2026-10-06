@@ -267,6 +267,10 @@ class PeriodicJobWatcher:
             def _worker() -> None:
                 cfg = config or load_watcher_config()
                 while not self._stop_event.is_set():
+                    if config is None:
+                        # Relit la configuration à chaque cycle pour prendre en compte
+                        # les modifications enregistrées pendant que la veille tourne.
+                        cfg = load_watcher_config()
                     try:
                         res = run_watcher_cycle(engine, profile, cfg, secrets)
                         with self._lock:

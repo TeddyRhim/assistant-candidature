@@ -1451,7 +1451,7 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
 
         if not watcher.is_active:
             if st.button("Démarrer la veille automatique périodique"):
-                watcher.start(engine, profile, cfg, secrets)
+                watcher.start(engine, profile, None, secrets)
                 st.success("Veille démarrée en tâche de fond !")
                 st.rerun()
         else:

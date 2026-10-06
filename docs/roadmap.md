@@ -66,8 +66,8 @@
 - [x] Générer et enregistrer les brouillons sans lancer leur téléchargement.
 - [x] Télécharger le PDF individuellement depuis le bouton de la carte de l'offre ; il n'y a pas de téléchargement ZIP groupé.
 - [x] Lancer une recherche Adzuna à la demande et la laisser s'exécuter en arrière-plan pendant la navigation.
-- [ ] Ajouter, si souhaité, un déclenchement planifié des recherches et une gestion durable des tâches.
-- [ ] Automatiser la soumission des candidatures : non disponible et à ne pas confondre avec la génération de documents.
+- [x] Veille planifiée des recherches (`services/job_watcher.py`) et pré-génération des dossiers (`services/dossier_generator.py`). Elle vit dans le processus Streamlit ; une gestion durable (service indépendant) reste optionnelle.
+- [ ] Automatiser la soumission des candidatures : non disponible et à ne pas confondre avec la génération de documents. Les API officielles Greenhouse/Lever de dépôt de candidature exigent une clé API de l'employeur et ne sont pas utilisables par un candidat ; cette piste est abandonnée.
 
 L'automatisation actuellement disponible prépare des éléments, mais ne postule pas : la recherche
 doit être lancée par l'utilisateur, les CV/lettres doivent être relus et les candidatures doivent
