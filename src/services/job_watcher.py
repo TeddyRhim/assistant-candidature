@@ -40,7 +40,7 @@ PlatformType = Literal["greenhouse", "lever"]
 MIN_LANGUAGE_CHECK_CHARACTERS = 120
 FRANCE_TRAVAIL_WATCH_DAYS = 14  # fenêtre de publication interrogée à chaque cycle
 
-# Mots (entiers) du titre qui écartent une annonce : hors cible pour un CDI backend PHP junior.
+# Mots (entiers) du titre qui écartent une annonce : hors cible pour un CDI backend PHP.
 DEFAULT_EXCLUDED_TITLE_KEYWORDS = (
     "stage",
     "stagiaire",
@@ -53,11 +53,6 @@ DEFAULT_EXCLUDED_TITLE_KEYWORDS = (
     "java",
     "angular",
     "lead",
-    "senior",
-    "sénior",
-    "confirmé",
-    "expert",
-    "architecte",
 )
 
 
