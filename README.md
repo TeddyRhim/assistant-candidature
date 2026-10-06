@@ -193,8 +193,15 @@ réception. Un PDF CV ciblé enregistré peut être joint. Les corps ne sont pas
 ils peuvent rester dans la session Streamlit active.
 
 La correspondance avec le profil est affichée directement dans chaque offre enregistrée :
-compétences pondérées selon leur niveau et leur importance détectée dans l'annonce (requise,
-mentionnée ou bonus), proximité de l'intitulé cible, contrat et zone/télétravail. Les critères
+**ta maîtrise moyenne des technologies que l'annonce demande** (langages, frameworks, bases de
+données, outils), pondérée par leur importance dans l'annonce (requise, mentionnée ou bonus,
+double poids si la technologie est dans le titre), proximité de l'intitulé cible, contrat et
+zone/télétravail. Une technologie absente du profil compte pour 0 ; un framework voisin d'un
+langage que tu maîtrises (Laravel pour PHP, Django pour Python) compte pour 60 % du niveau de ce
+langage. Le détail « Technologies demandées et ton niveau » est affiché sous le score. Les
+langages de ton profil au niveau 5 ou plus (aujourd'hui PHP, Python, JavaScript) sont cherchés en
+premier par les recherches Adzuna et France Travail : changer leur niveau dans **Profil** les
+ajoute ou les retire de la recherche. Les critères
 non renseignés sont exclus du score indicatif et les compétences absentes du texte sont marquées
 « à vérifier », pas comme manquantes chez le candidat. Les synonymes courants sont reconnus et
 chaque mention conserve un extrait de preuve ; vérifie les résultats, car la détection reste

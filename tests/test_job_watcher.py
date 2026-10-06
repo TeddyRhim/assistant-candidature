@@ -41,7 +41,7 @@ def test_watcher_config_save_and_load(tmp_path: Path) -> None:
     with patch("src.services.job_watcher.get_watcher_config_path", return_value=config_file):
         default_cfg = load_watcher_config()
         assert default_cfg.targets == []
-        assert default_cfg.min_match_percentage == 40
+        assert default_cfg.min_match_percentage == 50
         assert "stage" in default_cfg.excluded_title_keywords
 
         custom_cfg = WatcherConfig(

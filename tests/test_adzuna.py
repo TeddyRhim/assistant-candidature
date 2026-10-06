@@ -229,21 +229,43 @@ def test_profile_terms_are_ordered_by_strength_before_target_role() -> None:
         "RAG",
         "Développeur backend",
     )
+    # Les langages assez maîtrisés (niveau 5 ou plus) sont cherchés en premier.
     assert profile_search_keywords(profile, "fr") == (
         "PHP",
-        "API REST",
         "Python",
+        "API REST",
         "RAG",
         "Développeur backend",
     )
     assert profile_search_keywords(profile, "de") == (
         "PHP",
-        "API REST",
         "Python",
+        "API REST",
         "RAG",
         "Développeur backend",
         "developer",
     )
+
+
+def test_secondary_language_is_searched_even_when_strong_skills_fill_the_limit() -> None:
+    profile = ProfileData(
+        target_role="Développeur backend",
+        skills=[
+            SkillRating(name="PHP", category="Forte", level_min=9, level_max=9),
+            *(
+                SkillRating(name=f"Outil {index}", category="Forte", level_min=8, level_max=8)
+                for index in range(9)
+            ),
+            SkillRating(name="Python", category="Intermédiaire", level_min=5, level_max=5),
+            SkillRating(name="Java", category="En développement", level_min=4, level_max=4),
+        ],
+    )
+
+    keywords = profile_search_keywords(profile, "fr")
+
+    assert keywords[:2] == ("PHP", "Python")
+    assert "Java" not in keywords  # niveau 4 : pas assez maîtrisé pour être cherché
+    assert len(keywords) == 9  # 8 compétences au plus + le poste visé : pas plus de requêtes
 
 
 def test_profile_search_limits_distinct_skill_queries_to_top_eight() -> None:

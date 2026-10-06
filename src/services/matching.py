@@ -23,11 +23,77 @@ class SkillMatch:
 
 
 BENCHMARK_STACK_SIZE = 5
+# Une technologie voisine d'un langage maîtrisé (framework du même langage) compte pour une
+# fraction de ce niveau : un développeur PHP apprend Laravel plus vite qu'un novice.
+RELATED_TECHNOLOGY_FACTOR = 0.6
+# Niveau minimal (sur 10) d'un langage du profil pour qu'il serve à la recherche d'offres.
+SEARCH_LANGUAGE_MIN_LEVEL = 5
+ACCEPTED_LANGUAGE_TITLE_SCORE = 50
+
+
+@dataclass(frozen=True)
+class Technology:
+    key: str
+    label: str
+    aliases: tuple[str, ...]
+    parent: str | None = None
+    is_language: bool = False
+
+
+# Technologies que les annonces peuvent exiger, avec le langage dont elles dépendent.
+TECHNOLOGIES: tuple[Technology, ...] = (
+    Technology("php", "PHP", ("php", "php8", "php 8", "php7"), is_language=True),
+    Technology("python", "Python", ("python", "python3"), is_language=True),
+    Technology("java", "Java", ("java",), is_language=True),
+    Technology("javascript", "JavaScript", ("javascript", "ecmascript", "js"), is_language=True),
+    Technology("typescript", "TypeScript", ("typescript",), "javascript", True),
+    Technology("kotlin", "Kotlin", ("kotlin",), is_language=True),
+    Technology("csharp", "C#", ("c#", "c sharp"), is_language=True),
+    Technology("ruby", "Ruby", ("ruby",), is_language=True),
+    Technology("go", "Go", ("golang",), is_language=True),
+    Technology("rust", "Rust", ("rust",), is_language=True),
+    Technology("symfony", "Symfony", ("symfony", "symfony 6", "symfony 7"), "php"),
+    Technology("laravel", "Laravel", ("laravel",), "php"),
+    Technology("wordpress", "WordPress", ("wordpress",), "php"),
+    Technology("drupal", "Drupal", ("drupal",), "php"),
+    Technology("django", "Django", ("django",), "python"),
+    Technology("flask", "Flask", ("flask",), "python"),
+    Technology("fastapi", "FastAPI", ("fastapi", "fast api"), "python"),
+    Technology("spring", "Spring", ("spring boot", "spring framework", "spring"), "java"),
+    Technology("node", "Node.js", ("node.js", "nodejs", "node js"), "javascript"),
+    Technology("react", "React", ("react", "reactjs", "react.js"), "javascript"),
+    Technology("angular", "Angular", ("angular", "angularjs"), "typescript"),
+    Technology("vue", "Vue.js", ("vue.js", "vuejs", "vue 3", "vue 2"), "javascript"),
+    Technology("rails", "Ruby on Rails", ("ruby on rails", "rails"), "ruby"),
+    Technology("dotnet", ".NET", (".net", "dotnet"), "csharp"),
+    Technology("sql", "SQL", ("sql", "mysql", "mariadb", "postgresql", "postgres")),
+    Technology("docker", "Docker", ("docker",)),
+    Technology("kubernetes", "Kubernetes", ("kubernetes", "k8s")),
+    Technology("aws", "AWS", ("aws", "amazon web services")),
+    Technology("azure", "Azure", ("azure",)),
+    Technology(
+        "apirest",
+        "API REST",
+        ("api rest", "rest api", "restful", "apis rest", "api restful"),
+    ),
+)
+TECHNOLOGY_BY_KEY = {technology.key: technology for technology in TECHNOLOGIES}
+
+
+@dataclass(frozen=True)
+class RequiredTechnology:
+    """Technologie demandée par l'annonce, avec le niveau du profil (0 à 1)."""
+
+    label: str
+    level: float
+    in_title: bool = False
 
 
 @dataclass(frozen=True)
 class OfferMatch:
     matches: tuple[SkillMatch, ...]
+    required_technologies: tuple[RequiredTechnology, ...] = ()
+    requirements_percentage: int | None = None
 
     @property
     def mentioned_count(self) -> int:
@@ -39,8 +105,15 @@ class OfferMatch:
 
     @property
     def match_percentage(self) -> int | None:
+        """Maîtrise moyenne des technologies que l'annonce demande, pondérée par leur poids.
+
+        Quand aucune technologie connue n'est détectée, on retombe sur l'ancien calcul : part
+        des meilleures compétences du profil citées dans l'annonce.
+        """
         if not self.matches:
             return None
+        if self.requirements_percentage is not None:
+            return self.requirements_percentage
         benchmark_count = min(len(self.matches), BENCHMARK_STACK_SIZE)
         top_skills = sorted(
             self.matches,
@@ -123,7 +196,98 @@ def compare_offer_to_profile(offer: JobOfferData, profile: ProfileData) -> Offer
                 weight=weight,
             )
         )
-    return OfferMatch(matches=tuple(matches))
+    required, percentage = _requirements_coverage(offer, profile)
+    return OfferMatch(
+        matches=tuple(matches),
+        required_technologies=required,
+        requirements_percentage=percentage,
+    )
+
+
+def search_languages(profile: ProfileData) -> tuple[str, ...]:
+    """Langages du profil assez maîtrisés pour chercher des offres, du plus fort au plus faible.
+
+    Le niveau déclaré pilote la recherche : monter ou baisser le niveau d'un langage dans le
+    profil l'ajoute ou le retire des requêtes.
+    """
+    languages: dict[str, tuple[str, int]] = {}
+    for technology in TECHNOLOGIES:
+        if not technology.is_language:
+            continue
+        for skill in profile.skills:
+            if skill.level_max < SEARCH_LANGUAGE_MIN_LEVEL:
+                continue
+            if _skill_matches_technology(skill.name, technology):
+                known = languages.get(technology.key)
+                if known is None or skill.level_max > known[1]:
+                    languages[technology.key] = (skill.name, skill.level_max)
+    return tuple(
+        name for name, _level in sorted(languages.values(), key=lambda item: -item[1])
+    )
+
+
+def _skill_matches_technology(skill_name: str, technology: Technology) -> bool:
+    normalized = _normalize_skill_name(skill_name)
+    names = {_normalize_skill_name(technology.key), _normalize_skill_name(technology.label)}
+    names.update(_normalize_skill_name(alias) for alias in technology.aliases)
+    return normalized in names
+
+
+def _technology_level(
+    technology: Technology,
+    profile: ProfileData,
+    _depth: int = 0,
+) -> float:
+    """Niveau (0 à 1) du profil pour une technologie, ou une fraction de celui de son parent."""
+    direct = [
+        skill.level_max
+        for skill in profile.skills
+        if _skill_matches_technology(skill.name, technology)
+    ]
+    if direct:
+        return max(direct) / 10
+    parent = TECHNOLOGY_BY_KEY.get(technology.parent or "")
+    if parent is None or _depth >= 3:
+        return 0.0
+    return _technology_level(parent, profile, _depth + 1) * RELATED_TECHNOLOGY_FACTOR
+
+
+def _find_technology_evidence(text: str, technology: Technology) -> str | None:
+    for line in text.splitlines():
+        for alias in technology.aliases:
+            phrase = r"\s+".join(re.escape(part) for part in alias.split())
+            # « node.js » ne doit pas compter comme « js » : on exclut les points collés.
+            match = re.search(rf"(?<![\w.#+]){phrase}(?![\w#+])", line, re.IGNORECASE)
+            if match is not None:
+                start = max(0, match.start() - 50)
+                end = min(len(line), match.end() + 50)
+                return line[start:end].strip()
+    return None
+
+
+def _requirements_coverage(
+    offer: JobOfferData,
+    profile: ProfileData,
+) -> tuple[tuple[RequiredTechnology, ...], int | None]:
+    """Maîtrise moyenne des technologies exigées par l'annonce (titre = poids double)."""
+    text = f"{offer.title}\n{offer.description}"
+    required = []
+    total_weight = 0.0
+    achieved = 0.0
+    for technology in TECHNOLOGIES:
+        evidence = _find_technology_evidence(text, technology)
+        if evidence is None:
+            continue
+        _priority, priority_weight = _priority_for_aliases(evidence, technology.aliases)
+        in_title = _find_technology_evidence(offer.title, technology) is not None
+        weight = priority_weight * (2.0 if in_title else 1.0)
+        level = _technology_level(technology, profile)
+        total_weight += weight
+        achieved += weight * level
+        required.append(RequiredTechnology(technology.label, level, in_title))
+    if not required:
+        return (), None
+    return tuple(required), round(achieved / total_weight * 100)
 
 
 def assess_offer_fit(offer: JobOfferData, profile: ProfileData) -> OfferFitAssessment:
@@ -255,7 +419,11 @@ def _role_similarity(title: str, profile: ProfileData) -> int | None:
 
 
 def _title_stack_score(title: str, profile: ProfileData) -> int:
-    """70 % si le titre cite une compétence forte du profil, 100 % s'il en cite deux."""
+    """70 % si le titre cite une compétence forte du profil, 100 % s'il en cite deux.
+
+    Un titre qui cite seulement un langage accepté du profil (niveau moyen, par exemple
+    Python) obtient 50 %.
+    """
     cited = {
         _normalize_skill_name(skill.name)
         for skill in profile.skills
@@ -264,7 +432,11 @@ def _title_stack_score(title: str, profile: ProfileData) -> int:
         and _normalize_skill_name(skill.name) not in GENERIC_TITLE_SKILLS
         and _find_evidence(title, skill.name) is not None
     }
-    return {0: 0, 1: 70}.get(len(cited), 100)
+    if cited:
+        return {1: 70}.get(len(cited), 100)
+    if any(_find_evidence(title, language) is not None for language in search_languages(profile)):
+        return ACCEPTED_LANGUAGE_TITLE_SCORE
+    return 0
 
 
 def _meaningful_terms(value: str) -> set[str]:
@@ -361,6 +533,10 @@ SKILL_ALIASES: dict[str, tuple[str, ...]] = {
 
 def _evidence_priority(evidence: str, skill_name: str) -> tuple[str, float]:
     aliases = SKILL_ALIASES.get(_normalize_skill_name(skill_name), (skill_name,))
+    return _priority_for_aliases(evidence, aliases)
+
+
+def _priority_for_aliases(evidence: str, aliases: tuple[str, ...]) -> tuple[str, float]:
     segments = re.split(r"(?<=[.!?;])\s+", evidence)
 
     def segment_mentions_skill(segment: str) -> bool:

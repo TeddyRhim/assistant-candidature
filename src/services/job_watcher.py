@@ -82,7 +82,7 @@ class WatcherConfig(BaseModel):
         default_factory=lambda: list(FRANCE_TRAVAIL_DEFAULT_DEPARTMENTS)
     )
     france_travail_cdi_only: bool = True
-    min_match_percentage: int = Field(default=40, ge=0, le=100)
+    min_match_percentage: int = Field(default=50, ge=0, le=100)
     excluded_title_keywords: list[str] = Field(
         default_factory=lambda: list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
     )

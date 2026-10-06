@@ -16,7 +16,7 @@ from pydantic import AnyHttpUrl, ValidationError
 
 from src.models import JobOfferData, ProfileData
 from src.services.job_sources.base import JobSearchQuery, JobSourceError, SourceListing
-from src.services.matching import compare_offer_to_profile
+from src.services.matching import compare_offer_to_profile, search_languages
 
 ADZUNA_API_ROOT = "https://api.adzuna.com/v1/api/jobs"
 ADZUNA_RESULTS_PER_PAGE = 20
@@ -104,10 +104,13 @@ def profile_search_keywords(profile: ProfileData, country_code: str) -> tuple[st
     skills_by_priority = ordered_profile_terms(
         profile.model_copy(update={"target_role": ""})
     )
+    # Les langages acceptés passent en premier : sans eux, une compétence secondaire comme
+    # Python n'apparaîtrait jamais dans les requêtes, derrière les compétences les mieux notées.
+    prioritized = dict.fromkeys([*search_languages(profile), *skills_by_priority])
     role_term = profile.target_role or (
         "développeur" if country_code == "fr" else "developer"
     )
-    terms = [*skills_by_priority[:PROFILE_SEARCH_SKILL_LIMIT], role_term]
+    terms = [*list(prioritized)[:PROFILE_SEARCH_SKILL_LIMIT], role_term]
     if country_code != "fr":
         terms.append("developer")
     return tuple(dict.fromkeys(term for term in terms if term.strip()))

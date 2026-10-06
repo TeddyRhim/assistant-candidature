@@ -124,7 +124,13 @@ conserve un extrait de preuve et détecte si une compétence est requise, simple
 présentée comme un bonus ; ces priorités pondèrent la contribution des compétences au score. Les
 autres compétences sont classées comme « non mentionnées — à vérifier », sans déduire qu'elles
 sont absentes du candidat. Le calcul de correspondance classe les offres par un score
-déterministe et explicable : compétences (60 %), intitulé (20 % : recoupement avec le poste visé, ou 70 % / 100 % si le titre cite une ou deux compétences fortes du profil, hors compétences génériques comme SQL), contrat (10 %) et
+déterministe et explicable : compétences (60 % : maîtrise moyenne des technologies que l'annonce
+demande, détectées dans un catalogue de langages, frameworks et outils ; poids selon la priorité
+et double si la technologie est dans le titre ; un framework absent du profil compte pour 60 % du
+niveau de son langage ; repli sur l'ancien calcul si aucune technologie n'est détectée),
+intitulé (20 % : recoupement avec le poste visé, ou 70 % / 100 % si le titre cite une ou deux
+compétences fortes du profil hors compétences génériques comme SQL, ou 50 % pour un langage
+accepté de niveau 5 ou plus), contrat (10 %) et
 lieu/télétravail (10 %) ; seuls les critères renseignés entrent dans le calcul. Les entreprises
 sont analysées séparément à partir des activités déclarées et des textes sourcés, sans leur
 attribuer un score de stack technique ou inventer une équipe.

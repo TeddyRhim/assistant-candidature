@@ -146,9 +146,11 @@ from src.services.job_watcher import (
     save_watcher_config,
 )
 from src.services.matching import (
+    OfferMatch,
     assess_company_fit,
     assess_offer_fit,
     compare_offer_to_profile,
+    search_languages,
 )
 from src.services.offer_import import OfferImportError, import_offer_from_url
 from src.services.resume_import import (
@@ -806,6 +808,9 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
                     f"{len(comparison.matches)} "
                     f"(score compétences {comparison.match_percentage} %)"
                 )
+                technologies_caption = _required_technologies_text(comparison)
+                if technologies_caption:
+                    st.caption(technologies_caption)
                 for match in comparison.matches:
                     if match.mentioned:
                         st.write(
@@ -968,12 +973,16 @@ def _show_adzuna_search_tab(engine: Engine, profile: ProfileData) -> None:
         f"Jusqu'à {PROFILE_SEARCH_SKILL_LIMIT} compétences prioritaires et le poste visé font "
         "chacun l'objet d'une "
         "requête séparée ; elles ne sont donc pas exigées simultanément dans une annonce. "
-        "Toutes tes compétences contribuent ensuite au classement pondéré. Les requêtes "
-        "s'exécutent en parallèle avec au plus quatre appels actifs."
+        "Les langages que tu maîtrises assez (niveau 5 ou plus au profil) sont cherchés en "
+        "premier. Le classement mesure ta maîtrise des technologies que chaque annonce "
+        "demande. Les requêtes s'exécutent en parallèle avec au plus quatre appels actifs."
     )
     if profile.skills:
         ordered_terms = ordered_profile_terms(profile)
         st.write("**Compétences classées par priorité :** " + ", ".join(ordered_terms))
+        languages = search_languages(profile)
+        if languages:
+            st.write("**Langages cherchés en premier :** " + ", ".join(languages))
     else:
         st.warning("Ajoute tes compétences au profil pour obtenir un classement personnalisé.")
 
@@ -1117,9 +1126,13 @@ def _show_adzuna_search_tab(engine: Engine, profile: ProfileData) -> None:
                 st.progress(match.match_percentage / 100)
                 st.caption(
                     f"{match.mentioned_count} compétence(s) sur {len(match.matches)} "
-                    "mentionnée(s) dans le titre ou l'extrait Adzuna. Ce score mesure les "
-                    "compétences détectées, pas l'adéquation globale au poste."
+                    "mentionnée(s) dans le titre ou l'extrait Adzuna. Le score est ta maîtrise "
+                    "moyenne des technologies demandées (un extrait tronqué en révèle peu) ; "
+                    "il ne mesure pas l'adéquation globale au poste."
                 )
+                technologies_caption = _required_technologies_text(match)
+                if technologies_caption:
+                    st.caption(technologies_caption)
                 for skill_match in match.matches:
                     if skill_match.mentioned:
                         st.write(
@@ -1153,6 +1166,19 @@ def _show_adzuna_search_tab(engine: Engine, profile: ProfileData) -> None:
                 else:
                     st.success("Annonce enregistrée localement avec son lien d'origine.")
                     st.rerun()
+
+
+def _required_technologies_text(match: OfferMatch) -> str | None:
+    """Technologies demandées par l'annonce et niveau du profil, pour expliquer le score."""
+    if not match.required_technologies:
+        return None
+    parts = [
+        f"{item.label} ({round(item.level * 10)}/10)"
+        if item.level > 0
+        else f"{item.label} (hors profil)"
+        for item in match.required_technologies
+    ]
+    return "Technologies demandées et ton niveau : " + ", ".join(parts)
 
 
 def _france_travail_secrets() -> dict[str, object]:
@@ -1552,6 +1578,9 @@ def _show_targeted_job_boards_tab(engine: Engine, profile: ProfileData) -> None:
                     f"{match.mentioned_count} compétence(s) sur {len(match.matches)} "
                     "mentionnée(s) dans le descriptif."
                 )
+                technologies_caption = _required_technologies_text(match)
+                if technologies_caption:
+                    st.caption(technologies_caption)
                 for skill_match in match.matches:
                     if skill_match.mentioned:
                         st.write(
@@ -2889,6 +2918,9 @@ def show_profile_fit_page(engine: Engine, profile: ProfileData) -> None:
                             f"{len(skill_match.matches)} "
                             f"(score compétences : {skill_match.match_percentage} %)"
                         )
+                        technologies_caption = _required_technologies_text(skill_match)
+                        if technologies_caption:
+                            st.caption(technologies_caption)
                         for match in skill_match.matches:
                             if match.mentioned:
                                 st.write(
