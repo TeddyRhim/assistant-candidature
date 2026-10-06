@@ -139,7 +139,8 @@ document de référence.
 Le contrat commun des connecteurs est décrit dans `services/job_sources/base.py` : requêtes
 structurées, annonces normalisées, URL originale, contact public avec provenance et indice de
 relocalisation justifié par un extrait. Les connecteurs intégrés comprennent Adzuna (recherche
-par mots-clés et pays avec identifiants locaux) ainsi que Greenhouse et Lever (collecte ciblée
+par mots-clés et pays avec identifiants locaux), France Travail (API officielle OAuth2, texte
+complet des annonces) ainsi que Greenhouse et Lever (collecte ciblée
 en lecture seule sur les tableaux d'employeurs sans clé API). Aucun scraper de portail d'emploi
 n'est fourni. Voir `docs/job-sources.md` pour les sources examinées et leurs restrictions connues.
 

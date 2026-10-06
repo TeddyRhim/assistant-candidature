@@ -67,6 +67,7 @@
 - [x] Télécharger le PDF individuellement depuis le bouton de la carte de l'offre ; il n'y a pas de téléchargement ZIP groupé.
 - [x] Lancer une recherche Adzuna à la demande et la laisser s'exécuter en arrière-plan pendant la navigation.
 - [x] Veille planifiée des recherches (`services/job_watcher.py`) et pré-génération des dossiers (`services/dossier_generator.py`). Elle vit dans le processus Streamlit ; une gestion durable (service indépendant) reste optionnelle.
+- [x] Connecteur France Travail (`services/job_sources/france_travail.py`) : recherche manuelle, import en lot et intégration à la veille. À valider avec de vrais identifiants.
 - [x] File d'envoi (`services/send_queue.py`) : offres classées avec dossier prêt, téléchargement des PDF, enregistrement de l'envoi manuel, relance à J+7 et écartement rapide.
 - [ ] Automatiser la soumission des candidatures : non disponible et à ne pas confondre avec la génération de documents. Les API officielles Greenhouse/Lever de dépôt de candidature exigent une clé API de l'employeur et ne sont pas utilisables par un candidat ; cette piste est abandonnée.
 

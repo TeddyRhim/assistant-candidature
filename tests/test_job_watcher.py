@@ -3,13 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from pydantic import AnyHttpUrl
 from sqlalchemy.orm import Session
 
 from src.db import create_database_engine, initialize_database
 from src.models import ProfileData, ResumeVersion, SkillRating
 from src.services.job_offers import list_offers
-from src.services.job_sources.base import SourceListing
+from src.services.job_sources.adzuna import ProfileSearchResult
+from src.services.job_sources.base import JobSourceError, SourceListing
 from src.services.job_watcher import (
     MonitoredTarget,
     PeriodicJobWatcher,
@@ -227,6 +229,98 @@ def test_cycle_skips_excluded_titles_and_keeps_score_out_of_description(
     assert offer.title == "Développeur Symfony"
     assert "Score de pertinence" not in offer.description
     assert "Contact public : jobs@ateliertech.example" in offer.description
+
+
+FT_SECRETS = {"FRANCE_TRAVAIL_CLIENT_ID": "id", "FRANCE_TRAVAIL_CLIENT_SECRET": "secret"}
+
+
+def _france_travail_listing() -> SourceListing:
+    return SourceListing(
+        source_id="francetravail-1",
+        source_name="France Travail",
+        title="Développeur PHP Symfony",
+        company="Atelier Exemple",
+        location="Nice (06)",
+        contract_type="CDI",
+        original_url=AnyHttpUrl("https://candidat.francetravail.fr/offres/recherche/detail/1"),
+        description="PHP Symfony API REST SQL.",
+    )
+
+
+def _ft_cycle_config(**overrides: object) -> WatcherConfig:
+    return WatcherConfig(
+        enable_adzuna=False,
+        min_match_percentage=40,
+        auto_prepare_dossier=False,
+        **overrides,
+    )
+
+
+def test_cycle_imports_france_travail_offers_with_cdi_filter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FRANCE_TRAVAIL_CLIENT_ID", raising=False)
+    monkeypatch.delenv("FRANCE_TRAVAIL_CLIENT_SECRET", raising=False)
+    engine = create_database_engine(tmp_path / "ft.sqlite3")
+    initialize_database(engine)
+    search_result = ProfileSearchResult(
+        listings=(_france_travail_listing(),),
+        failed_targets=(("Var — « PHP »", "HTTP 500"),),
+        searched_targets=("Alpes-Maritimes",),
+        search_terms=("PHP",),
+    )
+
+    with patch(
+        "src.services.job_watcher.search_france_travail_for_profile",
+        return_value=search_result,
+    ) as search:
+        result = run_watcher_cycle(
+            engine, _sample_profile(), _ft_cycle_config(), secrets=FT_SECRETS
+        )
+
+    assert result.france_travail_scanned is True
+    assert result.new_offers_imported == 1
+    assert any("France Travail (Var" in error for error in result.errors)
+    assert search.call_args.kwargs["contract_codes"] == ("CDI",)
+    [offer] = list_offers(engine)
+    assert offer.source == "France Travail"
+    assert offer.url == "https://candidat.francetravail.fr/offres/recherche/detail/1"
+
+
+def test_cycle_survives_france_travail_failure_and_missing_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FRANCE_TRAVAIL_CLIENT_ID", raising=False)
+    monkeypatch.delenv("FRANCE_TRAVAIL_CLIENT_SECRET", raising=False)
+    engine = create_database_engine(tmp_path / "ft2.sqlite3")
+    initialize_database(engine)
+
+    with patch("src.services.job_watcher.search_france_travail_for_profile") as search:
+        no_credentials = run_watcher_cycle(engine, _sample_profile(), _ft_cycle_config())
+        assert no_credentials.france_travail_scanned is False
+        search.assert_not_called()
+
+    with patch(
+        "src.services.job_watcher.search_france_travail_for_profile",
+        side_effect=JobSourceError("authentification refusée"),
+    ):
+        failed = run_watcher_cycle(
+            engine,
+            _sample_profile(),
+            _ft_cycle_config(france_travail_cdi_only=False),
+            secrets=FT_SECRETS,
+        )
+    assert failed.france_travail_scanned is True
+    assert failed.new_offers_imported == 0
+    assert failed.errors == ["France Travail: authentification refusée"]
+
+    disabled = run_watcher_cycle(
+        engine,
+        _sample_profile(),
+        _ft_cycle_config(enable_france_travail=False),
+        secrets=FT_SECRETS,
+    )
+    assert disabled.france_travail_scanned is False
 
 
 def test_periodic_watcher_thread_start_and_stop(tmp_path: Path) -> None:

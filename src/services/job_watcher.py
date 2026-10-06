@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from src.config import get_adzuna_credentials, get_data_dir
+from src.config import get_adzuna_credentials, get_data_dir, get_france_travail_credentials
 from src.models import JobOffer, JobOfferData, ProfileData
 from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import DuplicateOfferURL, create_offer
@@ -24,6 +24,10 @@ from src.services.job_sources.adzuna import (
     search_adzuna_for_profile,
 )
 from src.services.job_sources.base import JobSourceError, SourceListing
+from src.services.job_sources.france_travail import (
+    DEFAULT_DEPARTMENTS as FRANCE_TRAVAIL_DEFAULT_DEPARTMENTS,
+)
+from src.services.job_sources.france_travail import search_france_travail_for_profile
 from src.services.job_sources.greenhouse import fetch_greenhouse_listings
 from src.services.job_sources.lever import fetch_lever_listings
 from src.services.matching import assess_offer_fit
@@ -31,6 +35,7 @@ from src.services.matching import assess_offer_fit
 logger = logging.getLogger(__name__)
 
 PlatformType = Literal["greenhouse", "lever"]
+FRANCE_TRAVAIL_WATCH_DAYS = 14  # fenêtre de publication interrogée à chaque cycle
 
 # Mots (entiers) du titre qui écartent une annonce : hors cible pour un CDI backend PHP.
 DEFAULT_EXCLUDED_TITLE_KEYWORDS = (
@@ -72,6 +77,11 @@ class WatcherConfig(BaseModel):
     targets: list[MonitoredTarget] = Field(default_factory=list)
     enable_adzuna: bool = True
     adzuna_countries: list[str] = Field(default_factory=lambda: ["fr"])
+    enable_france_travail: bool = True
+    france_travail_departments: list[str] = Field(
+        default_factory=lambda: list(FRANCE_TRAVAIL_DEFAULT_DEPARTMENTS)
+    )
+    france_travail_cdi_only: bool = True
     min_match_percentage: int = Field(default=40, ge=0, le=100)
     excluded_title_keywords: list[str] = Field(
         default_factory=lambda: list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
@@ -87,6 +97,7 @@ class WatcherCycleResult:
     completed_at: str = ""
     targets_scanned: int = 0
     adzuna_scanned: bool = False
+    france_travail_scanned: bool = False
     total_listings_found: int = 0
     new_offers_imported: int = 0
     dossiers_prepared: int = 0
@@ -182,9 +193,29 @@ def run_watcher_cycle(
                 except Exception as error:
                     result.errors.append(f"Adzuna ({country}): {error}")
 
+    # 3. Collecte France Travail (si activée et identifiants disponibles)
+    if cfg.enable_france_travail:
+        client_id, client_secret = get_france_travail_credentials(secrets)
+        if client_id and client_secret:
+            result.france_travail_scanned = True
+            try:
+                ft_result = search_france_travail_for_profile(
+                    profile,
+                    client_id,
+                    client_secret,
+                    departments=tuple(cfg.france_travail_departments),
+                    contract_codes=("CDI",) if cfg.france_travail_cdi_only else (),
+                    published_since_days=FRANCE_TRAVAIL_WATCH_DAYS,
+                )
+                collected_listings.extend(ft_result.listings)
+                for err_target, err_msg in ft_result.failed_targets:
+                    result.errors.append(f"France Travail ({err_target}): {err_msg}")
+            except Exception as error:
+                result.errors.append(f"France Travail: {error}")
+
     result.total_listings_found = len(collected_listings)
 
-    # 3. Filtrage, déduplication et import en base
+    # 4. Filtrage, déduplication et import en base
     with Session(engine) as session:
         for listing in collected_listings:
             listing_url = str(listing.original_url) if listing.original_url else ""

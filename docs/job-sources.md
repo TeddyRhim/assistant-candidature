@@ -25,7 +25,7 @@ juridique et doit être revu avant activation.
 | [Adzuna API](https://developer.adzuna.com/overview) | Recherche agrégée par pays, lieu, mots-clés et type de contrat ; utilisée pour une recherche en France et certains pays européens. | API de recherche avec identifiants `app_id` et `app_key`. | La disponibilité des pays doit être confirmée pour le compte. Les résultats exposent un extrait et une URL de redirection, pas un e-mail fiable ni nécessairement le texte intégral. Connecteur intégré, recherche déclenchée manuellement. |
 | [Greenhouse Job Board API](https://docs.greenhouse.io/job-board.html) | Annonces publiées d'employeurs sélectionnés qui utilisent Greenhouse, y compris dans plusieurs pays. | API officielle par tableau employeur ; lecture des offres publiées sans authentification. | Connecteur intégré (`services/job_sources/greenhouse.py`). Collecte ciblée par tableau d'employeur via identifiant ou URL. Détection des contrats, mentions de relocalisation et contact e-mail public. Import sélectif ou en lot. |
 | [Lever Postings API](https://github.com/Lever/postings-api) | Annonces publiées d'employeurs sélectionnés ; instances API globales et européennes, lieu et modalité de travail exposés. | API officielle de publications, en lecture seule. | Connecteur intégré (`services/job_sources/lever.py`). Collecte ciblée par site d'employeur via identifiant ou URL (avec support de l'endpoint européen). Détection des contrats, mentions de relocalisation et contact e-mail public. Import sélectif ou en lot. |
-| [France Travail - offres d'emploi](https://francetravail.io/data/api/offres-emploi) | Source à examiner pour Nice, Cannes, le Var et le marché français. | L'accès documenté et ses conditions n'ont pas pu être confirmés lors de la vérification initiale. | Ne pas implémenter avant de vérifier les modalités d'authentification, quotas et règles d'usage courantes. |
+| [France Travail - offres d'emploi](https://francetravail.io/data/api/offres-emploi) | Marché français, dont Nice, Cannes, le Var et Marseille ; texte complet des annonces. | API officielle, OAuth2 `client_credentials` : compte gratuit sur francetravail.io, application abonnée à l'API « Offres d'emploi », client id et secret. | Connecteur intégré (`services/job_sources/france_travail.py`). Limites publiées : 10 appels/s, 150 résultats par requête, 1 150 par recherche. La licence de réutilisation demande de présenter le contenu de l'offre avec sa provenance : le lien et la source « France Travail » sont conservés. Détails dans la section dédiée ci-dessous. |
 | [EURES](https://eures.europa.eu/index_en) | Portail européen utile pour explorer les postes transfrontaliers et à l'étranger. | Aucune API ou permission de collecte automatisée n'a été confirmée. | À utiliser manuellement tant qu'un accès officiel n'est pas documenté ; ne pas scraper son portail. |
 
 ## Contact d'agence et relocalisation
@@ -103,6 +103,30 @@ Chaque connecteur supplémentaire devra :
 3. mapper ses annonces au format commun sans perdre URL originale, source et éventuelle preuve ;
 4. échouer de façon visible en cas d'erreur réseau/configuration et rester facultatif à l'usage ;
 5. fournir des tests sur des réponses enregistrées anonymisées, sans appels réseau en CI.
+
+## France Travail (Offres d'emploi v2)
+
+- **Authentification** : `POST https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=%2Fpartenaire`
+  avec `grant_type=client_credentials`, le client id, le secret et le scope
+  `api_offresdemploiv2 o2dsoffre` (repli automatique sur `api_offresdemploiv2` seul si le scope
+  étendu est refusé). Le jeton est mis en cache jusqu'à son expiration.
+- **Recherche** : `GET https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search`
+  avec `motsCles`, `departement`, `typeContrat`, `publieeDepuis` et `range`. Un statut 204 signifie
+  aucune offre ; 206 une réponse partielle valide.
+- **Stratégie** : comme pour Adzuna, une requête par compétence prioritaire (et le poste visé) et
+  par département (06, 83, 13 et 75 par défaut), dédoublonnées par identifiant d'offre. Le filtre
+  « CDI uniquement » est activé par défaut, d'après la préférence de contrat du profil.
+- **Données conservées** : intitulé, entreprise, lieu nettoyé (`06 - NICE` devient `Nice (06)`),
+  contrat, texte complet, salaire, expérience et compétences demandées ajoutés au texte, lien de
+  l'annonce (origine partenaire si fournie, sinon page France Travail). Un e-mail n'est retenu que
+  s'il figure dans le champ `contact.courriel` ; sa provenance est le lien de l'annonce.
+- **Identifiants** : `FRANCE_TRAVAIL_CLIENT_ID` et `FRANCE_TRAVAIL_CLIENT_SECRET` dans
+  `.streamlit/secrets.toml` ou dans l'environnement. Ne jamais les placer dans le dépôt.
+- **Intégration** : onglet « France Travail » de **Recherche en ligne** (recherche manuelle, import
+  unitaire ou en lot au-dessus du seuil) et veille automatique (fenêtre de 14 jours à chaque cycle).
+- **Non vérifié en conditions réelles** : le connecteur est testé sur des réponses simulées
+  conformes à la documentation consultée. Une première recherche avec de vrais identifiants peut
+  révéler un écart de format ; les erreurs d'authentification et de quota sont affichées clairement.
 
 ## Connecteurs employeurs ciblés : Greenhouse et Lever
 

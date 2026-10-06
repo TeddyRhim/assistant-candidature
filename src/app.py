@@ -11,7 +11,11 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from streamlit.errors import StreamlitSecretNotFoundError
 
-from src.config import get_adzuna_credentials, get_mailjet_settings
+from src.config import (
+    get_adzuna_credentials,
+    get_france_travail_credentials,
+    get_mailjet_settings,
+)
 from src.db import (
     create_database_engine,
     initialize_database,
@@ -97,6 +101,13 @@ from src.services.job_sources.adzuna import (
     start_profile_search,
 )
 from src.services.job_sources.base import SourceListing
+from src.services.job_sources.france_travail import (
+    DEPARTMENT_NAMES as FRANCE_TRAVAIL_DEPARTMENT_NAMES,
+)
+from src.services.job_sources.france_travail import (
+    PUBLISHED_SINCE_CHOICES as FRANCE_TRAVAIL_PUBLISHED_SINCE_CHOICES,
+)
+from src.services.job_sources.france_travail import search_france_travail_for_profile
 from src.services.job_sources.greenhouse import (
     GREENHOUSE_DESCRIPTOR,
     extract_greenhouse_board_token,
@@ -109,6 +120,7 @@ from src.services.job_sources.lever import (
 )
 from src.services.job_watcher import (
     MonitoredTarget,
+    find_excluded_keyword,
     get_global_watcher,
     load_watcher_config,
     run_watcher_cycle,
@@ -836,15 +848,18 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
 
 def show_job_search_page(engine: Engine, profile: ProfileData) -> None:
     st.title("Recherche d'offres en ligne")
-    adzuna_tab, targeted_tab, watcher_tab = st.tabs(
+    adzuna_tab, france_travail_tab, targeted_tab, watcher_tab = st.tabs(
         [
             "Adzuna (recherche par mots-clés)",
+            "France Travail",
             "Greenhouse & Lever (collecte ciblée)",
             "Veille automatique planifiée",
         ]
     )
     with adzuna_tab:
         _show_adzuna_search_tab(engine, profile)
+    with france_travail_tab:
+        _show_france_travail_tab(engine, profile)
     with targeted_tab:
         _show_targeted_job_boards_tab(engine, profile)
     with watcher_tab:
@@ -1110,6 +1125,176 @@ def _show_adzuna_search_tab(engine: Engine, profile: ProfileData) -> None:
                             or "Adzuna n'a pas fourni d'extrait pour cette annonce.",
                         ),
                     )
+                except DuplicateOfferURL:
+                    st.info("Cette annonce a déjà été importée.")
+                else:
+                    st.success("Annonce enregistrée localement avec son lien d'origine.")
+                    st.rerun()
+
+
+def _france_travail_secrets() -> dict[str, object]:
+    return {
+        "FRANCE_TRAVAIL_CLIENT_ID": st.secrets.get("FRANCE_TRAVAIL_CLIENT_ID", ""),
+        "FRANCE_TRAVAIL_CLIENT_SECRET": st.secrets.get("FRANCE_TRAVAIL_CLIENT_SECRET", ""),
+    }
+
+
+def _france_travail_offer_data(listing: SourceListing) -> JobOfferData:
+    description = listing.description or "France Travail n'a pas fourni de texte pour cette offre."
+    if listing.public_contact_email:
+        description = f"Contact public : {listing.public_contact_email}\n\n{description}"
+    return JobOfferData(
+        title=listing.title,
+        company=listing.company,
+        location=listing.location,
+        contract_type=listing.contract_type,
+        url=str(listing.original_url),
+        source="France Travail",
+        description=description,
+    )
+
+
+def _show_france_travail_tab(engine: Engine, profile: ProfileData) -> None:
+    st.write(
+        "Recherche les offres publiées sur France Travail via son API officielle. Les "
+        "annonces comportent le texte complet (contrairement aux extraits Adzuna) ; elles ne "
+        "sont enregistrées que si tu les importes."
+    )
+    try:
+        secrets = _france_travail_secrets()
+    except StreamlitSecretNotFoundError:
+        secrets = {}
+    client_id, client_secret = get_france_travail_credentials(secrets)
+    if not client_id or not client_secret:
+        st.warning(
+            "Crée un compte sur [francetravail.io](https://francetravail.io/inscription), "
+            "déclare une application abonnée à l'API « Offres d'emploi », puis ajoute "
+            "FRANCE_TRAVAIL_CLIENT_ID et FRANCE_TRAVAIL_CLIENT_SECRET dans "
+            "`.streamlit/secrets.toml` ou dans les variables d'environnement locales. "
+            "Ne colle pas ces valeurs dans le dépôt ou dans la conversation."
+        )
+        return
+
+    flash = st.session_state.pop("ft_flash", None)
+    if flash:
+        st.success(flash)
+    watcher_cfg = load_watcher_config()
+    with st.form("france_travail_search"):
+        departments = st.multiselect(
+            "Départements",
+            options=list(FRANCE_TRAVAIL_DEPARTMENT_NAMES),
+            default=[
+                code
+                for code in watcher_cfg.france_travail_departments
+                if code in FRANCE_TRAVAIL_DEPARTMENT_NAMES
+            ],
+            format_func=lambda code: f"{code} — {FRANCE_TRAVAIL_DEPARTMENT_NAMES[code]}",
+        )
+        published_since = st.selectbox(
+            "Offres publiées depuis",
+            options=list(FRANCE_TRAVAIL_PUBLISHED_SINCE_CHOICES),
+            index=list(FRANCE_TRAVAIL_PUBLISHED_SINCE_CHOICES).index(14),
+            format_func=lambda days: f"{days} jour{'s' if days > 1 else ''}",
+        )
+        cdi_only = st.checkbox("CDI uniquement", value=watcher_cfg.france_travail_cdi_only)
+        submitted = st.form_submit_button("Rechercher sur France Travail", type="primary")
+
+    if profile.skills:
+        st.caption(
+            "Une requête par compétence prioritaire et par département ; elles ne sont pas "
+            "exigées simultanément. Termes : " + ", ".join(ordered_profile_terms(profile))
+        )
+
+    if submitted:
+        with st.spinner("Interrogation de France Travail..."):
+            try:
+                result = search_france_travail_for_profile(
+                    profile,
+                    client_id,
+                    client_secret,
+                    departments=tuple(departments),
+                    contract_codes=("CDI",) if cdi_only else (),
+                    published_since_days=published_since,
+                )
+            except JobSourceError as error:
+                st.error(str(error))
+                return
+        st.session_state["ft_results"] = [
+            listing.model_dump(mode="json") for listing in result.listings
+        ]
+        st.session_state["ft_failed"] = list(result.failed_targets)
+        st.session_state["ft_searched"] = list(result.searched_targets)
+
+    for target, message in st.session_state.get("ft_failed", []):
+        st.warning(f"Recherche pour « {target} » non aboutie : {message}")
+    results_data = st.session_state.get("ft_results")
+    if results_data is None:
+        return
+
+    saved_urls = {offer.url for offer in list_offers(engine) if offer.url}
+    listings = [SourceListing.model_validate(item) for item in results_data]
+    new_listings = [item for item in listings if str(item.original_url) not in saved_urls]
+    if len(new_listings) < len(listings):
+        st.info(f"{len(listings) - len(new_listings)} offre(s) déjà enregistrée(s) masquée(s).")
+    if not new_listings:
+        st.info("Aucune nouvelle offre pour ces critères.")
+        return
+
+    scored = sorted(
+        (
+            (
+                assess_offer_fit(_france_travail_offer_data(item), profile).overall_percentage
+                or 0,
+                item,
+            )
+            for item in new_listings
+        ),
+        key=lambda pair: pair[0],
+        reverse=True,
+    )
+    st.subheader(f"{len(scored)} nouvelle(s) offre(s) France Travail")
+    st.caption("Zones : " + ", ".join(st.session_state.get("ft_searched", [])))
+    importable = [
+        item
+        for score, item in scored
+        if score >= watcher_cfg.min_match_percentage
+        and not find_excluded_keyword(item.title, watcher_cfg.excluded_title_keywords)
+    ]
+    if importable and st.button(
+        f"Importer les {len(importable)} offre(s) au-dessus du seuil "
+        f"({watcher_cfg.min_match_percentage} %, hors titres exclus)"
+    ):
+        imported = 0
+        for item in importable:
+            try:
+                create_offer(engine, _france_travail_offer_data(item))
+                imported += 1
+            except DuplicateOfferURL:
+                continue
+        st.session_state["ft_results"] = [
+            row for row in results_data if SourceListing.model_validate(row) not in importable
+        ]
+        st.session_state["ft_flash"] = (
+            f"{imported} offre(s) importée(s). Retrouve-les dans la file d'envoi."
+        )
+        st.rerun()
+
+    for index, (score, item) in enumerate(scored):
+        with st.expander(
+            f"{score} % · {item.title} — {item.company or 'Employeur non précisé'} "
+            f"· {item.location or 'Lieu non précisé'}"
+        ):
+            st.progress(score / 100)
+            if item.contract_type:
+                st.write(f"**Contrat :** {item.contract_type}")
+            if item.public_contact_email:
+                st.write(f"**Contact public :** {item.public_contact_email}")
+            st.write(item.description or "Aucun texte fourni par la source.")
+            st.markdown(f"[Ouvrir l'annonce originale]({item.original_url})")
+            st.caption("Source : France Travail.")
+            if st.button("Importer cette offre localement", key=f"import_ft_{index}"):
+                try:
+                    create_offer(engine, _france_travail_offer_data(item))
                 except DuplicateOfferURL:
                     st.info("Cette annonce a déjà été importée.")
                 else:
@@ -1438,6 +1623,7 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             secrets = {
                 "ADZUNA_APP_ID": st.secrets.get("ADZUNA_APP_ID", ""),
                 "ADZUNA_APP_KEY": st.secrets.get("ADZUNA_APP_KEY", ""),
+                **_france_travail_secrets(),
             }
         except StreamlitSecretNotFoundError:
             secrets = {}
@@ -1527,6 +1713,23 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             "Inclure la recherche par profil Adzuna",
             value=cfg.enable_adzuna,
         )
+        enable_france_travail = st.checkbox(
+            "Inclure la recherche France Travail (identifiants requis)",
+            value=cfg.enable_france_travail,
+        )
+        ft_departments = st.multiselect(
+            "Départements France Travail",
+            options=list(FRANCE_TRAVAIL_DEPARTMENT_NAMES),
+            default=[
+                code for code in cfg.france_travail_departments
+                if code in FRANCE_TRAVAIL_DEPARTMENT_NAMES
+            ],
+            format_func=lambda code: f"{code} — {FRANCE_TRAVAIL_DEPARTMENT_NAMES[code]}",
+        )
+        ft_cdi_only = st.checkbox(
+            "France Travail : CDI uniquement",
+            value=cfg.france_travail_cdi_only,
+        )
         auto_import = st.checkbox(
             "Importer automatiquement en base les offres retenues",
             value=cfg.auto_import,
@@ -1544,6 +1747,9 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             ]
             cfg.interval_seconds = interval_hours * 3600
             cfg.enable_adzuna = enable_adzuna
+            cfg.enable_france_travail = enable_france_travail
+            cfg.france_travail_departments = ft_departments
+            cfg.france_travail_cdi_only = ft_cdi_only
             cfg.auto_import = auto_import
             cfg.auto_prepare_dossier = auto_prepare_dossier
             save_watcher_config(cfg)
