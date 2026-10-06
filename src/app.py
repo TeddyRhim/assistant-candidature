@@ -3486,7 +3486,9 @@ def _show_application_card(
     offer_options: dict[str, str],
 ) -> None:
     with st.container(border=True):
-        st.markdown(f"**{application.role}**  \n:gray[{company_label}]")
+        text_column, status_column, details_column = st.columns(
+            [6, 2, 1.5], vertical_alignment="center"
+        )
         details = []
         if application.applied_on:
             details.append(f"Envoyée le {application.applied_on}")
@@ -3494,9 +3496,17 @@ def _show_application_card(
             overdue = application.next_action_on <= date.today().isoformat()
             badge = ":red-badge[Relance due]" if overdue else ":gray-badge[Relance prévue]"
             details.append(f"{badge} {application.next_action_on}")
+        lines = [f"**{application.role}** — {company_label}"]
         if details:
-            st.caption(" · ".join(details))
-        st.selectbox(
+            lines.append(" · ".join(details))
+        if application.next_action:
+            due_on = f" ({application.next_action_on})" if application.next_action_on else ""
+            if application.status != "Envoyée":
+                lines.append(f":gray[À faire : {application.next_action}{due_on}]")
+            else:
+                lines.append(f":gray[{application.next_action}]")
+        text_column.markdown("  \n".join(lines))
+        status_column.selectbox(
             "Statut",
             options=APPLICATION_STATUSES,
             index=APPLICATION_STATUSES.index(application.status)
@@ -3507,7 +3517,7 @@ def _show_application_card(
             on_change=_change_application_status,
             args=(engine, application.id),
         )
-        with st.popover("Détails", width="stretch"):
+        with details_column.popover("Détails", width="stretch"):
             if application.job_offer_id and application.job_offer_id in offer_options:
                 st.caption(f"Offre : {offer_options[application.job_offer_id]}")
             else:
@@ -3589,19 +3599,30 @@ def show_applications_page(engine: Engine) -> None:
         company = companies_by_id.get(application.company_id)
         return company.name if company else "Entreprise supprimée"
 
-    columns = st.columns(len(BOARD_STATUSES))
-    for column, status in zip(columns, BOARD_STATUSES, strict=True):
-        column_items = [a for a in applications if a.status == status]
-        with column:
-            st.markdown(f"**{status}** ({len(column_items)})")
-            for application in column_items:
-                _show_application_card(
-                    engine, application, label_for(application), company_options, offer_options
-                )
-    closed = [a for a in applications if a.status in CLOSED_STATUSES]
-    if closed:
-        with st.expander(f"Clôturées ({len(closed)})"):
-            for application in closed:
+    today = date.today().isoformat()
+    groups: list[tuple[str, list]] = [
+        (status, [a for a in applications if a.status == status]) for status in BOARD_STATUSES
+    ]
+    groups.append(("Clôturées", [a for a in applications if a.status in CLOSED_STATUSES]))
+    labels = []
+    for name, items in groups:
+        label = f"{name} ({len(items)})"
+        overdue = sum(
+            1
+            for a in items
+            if a.status == "Envoyée" and a.next_action_on and a.next_action_on <= today
+        )
+        if overdue:
+            label += f" · {overdue} à relancer"
+        labels.append(label)
+
+    for tab, (name, items) in zip(st.tabs(labels), groups, strict=True):
+        with tab:
+            if not items:
+                st.caption(f"Aucune candidature dans « {name} ».")
+                continue
+            # Les relances échues d'abord, puis par date d'action ; sans date en dernier.
+            for application in sorted(items, key=lambda a: a.next_action_on or "9999-12-31"):
                 _show_application_card(
                     engine, application, label_for(application), company_options, offer_options
                 )
