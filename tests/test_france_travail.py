@@ -27,8 +27,8 @@ class FakeResponse:
         return None
 
 
-def _http_error(url: str, code: int) -> HTTPError:
-    return HTTPError(url, code, "erreur", {}, io.BytesIO(b"{}"))  # type: ignore[arg-type]
+def _http_error(url: str, code: int, body: bytes = b"{}") -> HTTPError:
+    return HTTPError(url, code, "erreur", {}, io.BytesIO(body))  # type: ignore[arg-type]
 
 
 @pytest.fixture(autouse=True)
@@ -129,6 +129,25 @@ def test_missing_or_refused_credentials_raise_clear_errors(
     monkeypatch.setattr(france_travail, "urlopen", refuse)
     with pytest.raises(JobSourceError, match="refusé l'authentification"):
         france_travail.get_access_token("id", "mauvais")
+
+
+def test_unsubscribed_api_is_distinguished_from_wrong_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refuse_with(error_code: str):  # noqa: ANN202
+        def refuse(request, timeout: float = 0):  # noqa: ANN001
+            body = json.dumps({"error": error_code}).encode()
+            raise _http_error(request.full_url, 400, body)
+
+        return refuse
+
+    monkeypatch.setattr(france_travail, "urlopen", refuse_with("invalid_scope"))
+    with pytest.raises(JobSourceError, match="pas abonnée à l'API « Offres d'emploi »"):
+        france_travail.get_access_token("id", "secret")
+
+    monkeypatch.setattr(france_travail, "urlopen", refuse_with("invalid_client"))
+    with pytest.raises(JobSourceError, match="client id et le secret"):
+        france_travail.get_access_token("id", "secret")
 
 
 def test_search_sends_bearer_token_and_documented_parameters(api: FakeApi) -> None:

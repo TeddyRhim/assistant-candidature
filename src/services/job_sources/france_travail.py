@@ -118,11 +118,16 @@ def _request_token_with_fallback(client_id: str, client_secret: str) -> dict[str
         except HTTPError as error:
             if error.code == 400 and scope == FRANCE_TRAVAIL_SCOPE:
                 continue  # scope refusé : on retente avec le scope minimal
+            oauth_error = _oauth_error_code(error)
+            if oauth_error == "invalid_scope":
+                raise JobSourceError(
+                    "L'application France Travail n'est pas abonnée à l'API « Offres d'emploi » "
+                    "(scope refusé). Sur francetravail.io, ajoute cette API à ton application."
+                ) from error
             if error.code in {400, 401, 403}:
                 raise JobSourceError(
-                    f"France Travail a refusé l'authentification (HTTP {error.code}). "
-                    "Vérifie le client id, le secret et l'abonnement de l'application à "
-                    "l'API « Offres d'emploi »."
+                    f"France Travail a refusé l'authentification (HTTP {error.code}) : "
+                    "vérifie le client id et le secret de l'application."
                 ) from error
             raise JobSourceError(
                 f"France Travail a refusé la demande de jeton (HTTP {error.code})."
@@ -136,6 +141,15 @@ def _request_token_with_fallback(client_id: str, client_secret: str) -> dict[str
                 "France Travail a renvoyé une réponse de jeton invalide."
             ) from error
     raise JobSourceError("France Travail a refusé l'authentification.")
+
+
+def _oauth_error_code(error: HTTPError) -> str:
+    """Code d'erreur OAuth2 (`invalid_scope`, `invalid_client`…) du corps de la réponse."""
+    try:
+        payload = json.loads(error.read())
+    except (OSError, ValueError):
+        return ""
+    return str(payload.get("error", "")) if isinstance(payload, dict) else ""
 
 
 def _clear_token_cache() -> None:
