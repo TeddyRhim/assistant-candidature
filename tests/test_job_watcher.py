@@ -1,0 +1,196 @@
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import patch
+
+from pydantic import AnyHttpUrl
+from sqlalchemy.orm import Session
+
+from src.db import create_database_engine, initialize_database
+from src.models import ProfileData, ResumeVersion, SkillRating
+from src.services.job_offers import list_offers
+from src.services.job_sources.base import SourceListing
+from src.services.job_watcher import (
+    MonitoredTarget,
+    PeriodicJobWatcher,
+    WatcherConfig,
+    load_watcher_config,
+    run_watcher_cycle,
+    save_watcher_config,
+)
+
+
+def _sample_profile() -> ProfileData:
+    return ProfileData(
+        target_role="Développeur Symfony",
+        skills=[
+            SkillRating(name="PHP", category="Forte", level_min=8, level_max=8),
+            SkillRating(name="Symfony", category="Forte", level_min=8, level_max=8),
+            SkillRating(name="API REST", category="Forte", level_min=8, level_max=8),
+            SkillRating(name="SQL", category="Forte", level_min=7, level_max=7),
+            SkillRating(name="Docker", category="Intermédiaire", level_min=5, level_max=5),
+        ],
+    )
+
+
+def test_watcher_config_save_and_load(tmp_path: Path) -> None:
+    config_file = tmp_path / "watcher_config.json"
+    with patch("src.services.job_watcher.get_watcher_config_path", return_value=config_file):
+        default_cfg = load_watcher_config()
+        assert default_cfg.targets == []
+        assert default_cfg.min_match_percentage == 40
+
+        custom_cfg = WatcherConfig(
+            targets=[
+                MonitoredTarget(
+                    platform="greenhouse",
+                    target="ateliertech",
+                    display_name="Atelier Tech",
+                ),
+                MonitoredTarget(platform="lever", target="exampleco", is_eu=True),
+            ],
+            enable_adzuna=False,
+            min_match_percentage=50,
+        )
+        save_watcher_config(custom_cfg)
+        loaded = load_watcher_config()
+        assert len(loaded.targets) == 2
+        assert loaded.targets[0].platform == "greenhouse"
+        assert loaded.targets[0].target == "ateliertech"
+        assert loaded.targets[1].is_eu is True
+        assert loaded.enable_adzuna is False
+        assert loaded.min_match_percentage == 50
+
+
+def test_run_watcher_cycle_imports_matching_and_skips_duplicates(tmp_path: Path) -> None:
+    db_path = tmp_path / "test_watcher.sqlite3"
+    engine = create_database_engine(db_path)
+    initialize_database(engine)
+    profile = _sample_profile()
+
+    with Session(engine) as session, session.begin():
+        session.add(
+            ResumeVersion(
+                id="resume-id",
+                original_filename="cv_ref.pdf",
+                stored_filename="cv_ref.pdf",
+                reviewed_text="Alexandre Martin Développeur PHP Symfony API REST SQL",
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+        )
+
+    mock_greenhouse_listings = [
+        SourceListing(
+            source_id="gh-1",
+            source_name="Greenhouse (Atelier Tech)",
+            title="Développeur Backend PHP Symfony",
+            company="Atelier Tech",
+            location="Nice",
+            original_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/1"),
+            description="Recherche développeur PHP Symfony, API REST et SQL pour CDI.",
+        ),
+        SourceListing(
+            source_id="gh-2",
+            source_name="Greenhouse (Atelier Tech)",
+            title="Data Scientist R & Deep Learning",
+            company="Atelier Tech",
+            location="Paris",
+            original_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/2"),
+            description="Recherche spécialiste PyTorch et R.",
+        ),
+    ]
+
+    mock_lever_listings = [
+        SourceListing(
+            source_id="lev-1",
+            source_name="Lever (ExampleCo)",
+            title="Senior Symfony Engineer",
+            company="ExampleCo",
+            location="Télétravail",
+            original_url=AnyHttpUrl("https://jobs.lever.co/exampleco/lev-1"),
+            description="Mission sur API REST, Doctrine ORM et Docker avec Symfony.",
+            public_contact_email="jobs@exampleco.com",
+            contact_source_url=AnyHttpUrl("https://jobs.lever.co/exampleco/lev-1"),
+        )
+    ]
+
+    config = WatcherConfig(
+        targets=[
+            MonitoredTarget(platform="greenhouse", target="ateliertech"),
+            MonitoredTarget(platform="lever", target="exampleco"),
+        ],
+        enable_adzuna=False,
+        min_match_percentage=40,
+        auto_import=True,
+    )
+
+    with (
+        patch(
+            "src.services.job_watcher.fetch_greenhouse_listings",
+            return_value=mock_greenhouse_listings,
+        ),
+        patch(
+            "src.services.job_watcher.fetch_lever_listings",
+            return_value=mock_lever_listings,
+        ),
+    ):
+        result = run_watcher_cycle(engine, profile, config)
+
+    assert result.targets_scanned == 2
+    assert result.total_listings_found == 3
+    # gh-1 et lev-1 matchent PHP/Symfony, gh-2 a un score faible
+    assert result.new_offers_imported == 2
+    assert result.dossiers_prepared == 2
+    assert result.low_match_skipped == 1
+    assert result.duplicates_skipped == 0
+    assert len(result.imported_offer_titles) == 2
+
+    # Vérification en base de données
+    offers = list_offers(engine)
+    assert len(offers) == 2
+    titles = [o.title for o in offers]
+    assert "Développeur Backend PHP Symfony" in titles
+    assert "Senior Symfony Engineer" in titles
+
+    # Deuxième cycle avec les mêmes données : toutes doivent être détectées en doublon sans réimport
+    with (
+        patch(
+            "src.services.job_watcher.fetch_greenhouse_listings",
+            return_value=mock_greenhouse_listings,
+        ),
+        patch(
+            "src.services.job_watcher.fetch_lever_listings",
+            return_value=mock_lever_listings,
+        ),
+    ):
+        second_result = run_watcher_cycle(engine, profile, config)
+
+    assert second_result.new_offers_imported == 0
+    assert second_result.duplicates_skipped == 2
+    assert second_result.low_match_skipped == 1
+
+
+def test_periodic_watcher_thread_start_and_stop(tmp_path: Path) -> None:
+    db_path = tmp_path / "test_periodic.sqlite3"
+    engine = create_database_engine(db_path)
+    initialize_database(engine)
+    profile = _sample_profile()
+
+    watcher = PeriodicJobWatcher()
+    assert not watcher.is_active
+
+    with (
+        patch("src.services.job_watcher.fetch_greenhouse_listings", return_value=[]),
+        patch("src.services.job_watcher.fetch_lever_listings", return_value=[]),
+    ):
+        config = WatcherConfig(targets=[], enable_adzuna=False, interval_seconds=300)
+        started = watcher.start(engine, profile, config)
+        assert started is True
+        assert watcher.is_active
+
+        # Deuxième start immédiat doit retourner False
+        assert watcher.start(engine, profile, config) is False
+
+        stopped = watcher.stop()
+        assert stopped is True
+        assert not watcher.is_active

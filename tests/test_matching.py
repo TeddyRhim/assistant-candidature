@@ -79,7 +79,38 @@ def test_skill_aliases_and_requirement_priority_improve_match_score() -> None:
     assert result.matches[0].priority == "requise dans l'annonce"
     assert result.matches[1].priority == "bonus dans l'annonce"
     assert result.matches[2].priority == "mentionnée"
-    assert result.match_percentage == 68
+    assert result.match_percentage == 70
+
+
+def test_match_percentage_does_not_penalize_rich_candidate_profile() -> None:
+    skills = [
+        SkillRating(name="PHP", category="Forte", level_min=8, level_max=8),
+        SkillRating(name="Symfony", category="Forte", level_min=8, level_max=8),
+        SkillRating(name="API REST", category="Forte", level_min=8, level_max=8),
+        SkillRating(name="SQL", category="Forte", level_min=7, level_max=7),
+        SkillRating(name="Docker", category="Intermédiaire", level_min=5, level_max=5),
+        SkillRating(name="Git", category="Forte", level_min=7, level_max=7),
+        SkillRating(name="Kubernetes", category="En développement", level_min=3, level_max=3),
+        SkillRating(name="FastAPI", category="En développement", level_min=4, level_max=4),
+        SkillRating(name="Vue.js", category="Intermédiaire", level_min=5, level_max=5),
+        SkillRating(name="Spring Boot", category="En développement", level_min=4, level_max=4),
+        SkillRating(name="CI/CD", category="Intermédiaire", level_min=6, level_max=6),
+        SkillRating(name="Linux", category="Intermédiaire", level_min=6, level_max=6),
+        SkillRating(name="Python", category="Intermédiaire", level_min=5, level_max=5),
+        SkillRating(name="Java", category="En développement", level_min=4, level_max=4),
+        SkillRating(name="Microservices", category="En développement", level_min=4, level_max=4),
+    ]
+    profile = ProfileData(skills=skills)
+    offer = JobOfferData(
+        title="Développeur PHP / Symfony",
+        description=(
+            "Nous recherchons un développeur backend PHP et Symfony.\n"
+            "Maîtrise d'API REST et de SQL requise."
+        ),
+    )
+    result = compare_offer_to_profile(offer, profile)
+    assert result.match_percentage is not None
+    assert result.match_percentage >= 75
 
 
 def test_empty_profile_returns_empty_comparison() -> None:

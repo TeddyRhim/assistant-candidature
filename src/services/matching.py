@@ -22,6 +22,9 @@ class SkillMatch:
     weight: float = 1.0
 
 
+BENCHMARK_STACK_SIZE = 5
+
+
 @dataclass(frozen=True)
 class OfferMatch:
     matches: tuple[SkillMatch, ...]
@@ -38,15 +41,21 @@ class OfferMatch:
     def match_percentage(self) -> int | None:
         if not self.matches:
             return None
-        total_weight = sum(
-            max(match.skill.level_max, 1) * match.weight for match in self.matches
-        )
+        benchmark_count = min(len(self.matches), BENCHMARK_STACK_SIZE)
+        top_skills = sorted(
+            self.matches,
+            key=lambda m: (m.skill.level_max, m.weight),
+            reverse=True,
+        )[:benchmark_count]
+        benchmark_weight = sum(max(m.skill.level_max, 1) for m in top_skills)
+        if benchmark_weight <= 0:
+            return 0
         matched_weight = sum(
             max(match.skill.level_max, 1) * match.weight
             for match in self.matches
             if match.mentioned
         )
-        return round(matched_weight / total_weight * 100)
+        return min(100, round(matched_weight / benchmark_weight * 100))
 
 
 @dataclass(frozen=True)
@@ -289,13 +298,41 @@ SKILL_ALIASES: dict[str, tuple[str, ...]] = {
     "c#": ("c#", "c sharp"),
     ".net": (".net", "dotnet"),
     "dotnet": (".net", "dotnet"),
-    "restapi": ("rest api", "restful api", "api rest"),
-    "apirest": ("api rest", "rest api", "restful api"),
-    "vue.js": ("vue.js", "vuejs", "vue"),
-    "vuejs": ("vue.js", "vuejs", "vue"),
+    "restapi": ("rest api", "restful api", "api rest", "apis rest", "rest"),
+    "apirest": ("api rest", "rest api", "restful api", "apis rest", "rest"),
+    "apisrestsoap": ("api rest", "rest api", "soap", "api soap", "rest", "apis"),
+    "soap": ("soap", "api soap", "apis soap"),
+    "vue.js": ("vue.js", "vuejs", "vue", "vue 3", "vue 2"),
+    "vuejs": ("vue.js", "vuejs", "vue", "vue 3", "vue 2"),
     "react.js": ("react.js", "reactjs", "react"),
     "reactjs": ("react.js", "reactjs", "react"),
     "aws": ("aws", "amazon web services"),
+    "fastapi": ("fastapi", "fast api"),
+    "springboot": ("spring boot", "springboot", "spring"),
+    "docker": ("docker", "conteneur", "containerization"),
+    "kubernetes": ("kubernetes", "k8s"),
+    "cicd": ("ci/cd", "ci-cd", "ci cd", "continuous integration", "intégration continue"),
+    "shellbashscripting": ("bash", "shell", "sh", "scripting", "scripts bash"),
+    "linux": ("linux", "unix", "debian", "ubuntu"),
+    "nginx": ("nginx",),
+    "oauth2": ("oauth2", "oauth 2", "oauth"),
+    "jwt": ("jwt", "json web token"),
+    "sql": ("sql", "mysql", "mariadb", "postgresql", "postgres"),
+    "doctrine": ("doctrine", "doctrine orm", "orm doctrine"),
+    "agilescrum": ("agile", "scrum", "agilité", "méthode agile"),
+    "testing": ("testing", "tests", "tests unitaires", "phpunit", "pytest", "tdd"),
+    "optimisation": ("optimisation", "performance", "tuning", "optimisation sql"),
+    "gestiondeprojets": ("gestion de projet", "gestion de projets", "project management"),
+    "microservices": ("microservices", "micro-services", "micro services"),
+    "designpatterns": ("design patterns", "design pattern", "patrons de conception"),
+    "apiversioning": ("api versioning", "versioning d'api", "versioning"),
+    "webscraping": ("web scraping", "scraping", "scraper"),
+    "curl": ("curl", "c-url"),
+    "kotlin": ("kotlin",),
+    "lua": ("lua",),
+    "python": ("python", "python3"),
+    "php": ("php", "php8", "php 8", "php7"),
+    "symfony": ("symfony", "symfony 6", "symfony 7", "sf"),
 }
 
 
