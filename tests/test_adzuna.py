@@ -12,6 +12,7 @@ from src.models import ProfileData, SkillRating
 from src.services.job_sources.adzuna import (
     ADZUNA_MARKETS,
     LOCAL_SEARCH_LOCATIONS,
+    AdzunaRateLimited,
     JobSourceError,
     ProfileSearchResult,
     get_profile_search_status,
@@ -23,6 +24,7 @@ from src.services.job_sources.adzuna import (
     rank_adzuna_results,
     search_adzuna,
     search_adzuna_for_profile,
+    search_adzuna_throttled,
     start_profile_search,
 )
 from src.services.job_sources.base import JobSearchQuery, SourceListing
@@ -452,3 +454,51 @@ def test_international_search_filters_other_languages_and_supports_canada() -> N
     assert result.filtered_language_count == 1
     assert ADZUNA_MARKETS["ca"] == "Canada"
     assert search.call_count == 2
+
+
+def _profile_php() -> ProfileData:
+    return ProfileData(
+        skills=[SkillRating(name="PHP", category="Forte", level_min=8, level_max=8)]
+    )
+
+
+def test_throttled_search_retries_once_after_rate_limit() -> None:
+    calls = {"count": 0}
+
+    def flaky(*_args):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise AdzunaRateLimited("429")
+        return []
+
+    with patch("src.services.job_sources.adzuna.search_adzuna", side_effect=flaky):
+        result = search_adzuna_throttled(
+            _profile_php(), "fr", "Nice", "id", "key", pause_seconds=0, retry_wait_seconds=0
+        )
+
+    assert result.rate_limited is False
+    assert result.failed_targets == ()
+    assert calls["count"] > 1
+
+
+def test_throttled_search_stops_after_two_consecutive_rate_limits() -> None:
+    with patch(
+        "src.services.job_sources.adzuna.search_adzuna", side_effect=AdzunaRateLimited("429")
+    ) as search:
+        result = search_adzuna_throttled(
+            _profile_php(), "fr", "Nice", "id", "key", pause_seconds=0, retry_wait_seconds=0
+        )
+
+    assert result.rate_limited is True
+    assert search.call_count == 2
+
+
+def test_throttled_search_pauses_between_keywords() -> None:
+    with (
+        patch("src.services.job_sources.adzuna.search_adzuna", return_value=[]),
+        patch("src.services.job_sources.adzuna.time.sleep") as sleep,
+    ):
+        search_adzuna_throttled(_profile_php(), "fr", "Nice", "id", "key", pause_seconds=3)
+
+    assert sleep.call_count >= 1
+    assert all(call.args == (3,) for call in sleep.call_args_list)

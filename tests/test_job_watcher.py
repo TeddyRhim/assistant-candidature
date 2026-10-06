@@ -347,3 +347,76 @@ def test_periodic_watcher_thread_start_and_stop(tmp_path: Path) -> None:
         stopped = watcher.stop()
         assert stopped is True
         assert not watcher.is_active
+
+
+def _adzuna_listing(ad_id: str, tracking: str, title: str = "Développeur Symfony") -> SourceListing:
+    return SourceListing(
+        source_id=ad_id,
+        source_name="Adzuna",
+        title=title,
+        company="Cabinet Ekinox",
+        location="Paris",
+        original_url=AnyHttpUrl(f"https://www.adzuna.fr/details/{ad_id}?se={tracking}"),
+        description="Développeur PHP Symfony, API REST et SQL.",
+    )
+
+
+def test_cycle_skips_same_offer_republished_under_another_url(tmp_path: Path) -> None:
+    engine = create_database_engine(tmp_path / "db.sqlite3")
+    initialize_database(engine)
+    config = WatcherConfig(
+        targets=[MonitoredTarget(platform="greenhouse", target="x")],
+        enable_adzuna=False,
+        min_match_percentage=0,
+        auto_prepare_dossier=False,
+    )
+    listings = [_adzuna_listing("1", "a"), _adzuna_listing("2", "b")]
+
+    with patch("src.services.job_watcher.fetch_greenhouse_listings", return_value=listings):
+        first = run_watcher_cycle(engine, _sample_profile(), config)
+        second = run_watcher_cycle(engine, _sample_profile(), config)
+
+    assert first.new_offers_imported == 1
+    assert first.duplicates_skipped == 1
+    assert second.new_offers_imported == 0
+    assert len(list_offers(engine)) == 1
+
+
+def test_adzuna_cycle_goes_zone_by_zone_and_resumes_after_rate_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("ASSISTANT_CANDIDATURES_DATA_DIR", str(tmp_path))
+    engine = create_database_engine(tmp_path / "db.sqlite3")
+    initialize_database(engine)
+    config = WatcherConfig(
+        enable_adzuna=True,
+        enable_france_travail=False,
+        min_match_percentage=0,
+        auto_prepare_dossier=False,
+    )
+    secrets = {"ADZUNA_APP_ID": "id", "ADZUNA_APP_KEY": "key"}
+    visited: list[str] = []
+
+    def limited_on_third_zone(_profile, _country, location, _id, _key):
+        visited.append(location)
+        return ProfileSearchResult(
+            listings=(),
+            failed_targets=(),
+            searched_targets=(location,),
+            search_terms=(),
+            rate_limited=len(visited) == 3,
+        )
+
+    with patch(
+        "src.services.job_watcher.search_adzuna_throttled", side_effect=limited_on_third_zone
+    ):
+        first = run_watcher_cycle(engine, _sample_profile(), config, secrets)
+        assert len(visited) == 3
+        assert any("reprendra" in error for error in first.errors)
+
+        visited.clear()
+        run_watcher_cycle(engine, _sample_profile(), config, secrets)
+
+    # La seconde récupération reprend à la zone interrompue (3e), pas au début.
+    assert visited[0] == "Mougins"
+    assert "Nice" not in visited

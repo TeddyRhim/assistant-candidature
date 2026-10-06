@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 import unicodedata
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -24,6 +25,9 @@ ADZUNA_TIMEOUT_SECONDS = 15
 PROFILE_SEARCH_WORKERS = 4
 PROFILE_SEARCH_BACKGROUND_WORKERS = 1
 PROFILE_SEARCH_SKILL_LIMIT = 8
+# Veille : une requête à la fois, espacées, pour rester sous la limite de débit d'Adzuna.
+THROTTLED_PAUSE_SECONDS = 3.0
+THROTTLED_RETRY_WAIT_SECONDS = 65.0
 LOCAL_SEARCH_LOCATIONS = (
     "Nice",
     "Cannes",
@@ -68,6 +72,11 @@ class ProfileSearchResult:
     searched_targets: tuple[str, ...]
     search_terms: tuple[str, ...]
     filtered_language_count: int = 0
+    rate_limited: bool = False
+
+
+class AdzunaRateLimited(JobSourceError):
+    """Adzuna a répondu 429 : trop de requêtes, il faut ralentir ou réessayer plus tard."""
 
 
 @dataclass(frozen=True)
@@ -171,6 +180,65 @@ def search_adzuna_for_profile(
         ),
         search_terms=terms,
         filtered_language_count=filtered_language_count,
+    )
+
+
+def search_adzuna_throttled(
+    profile: ProfileData,
+    country_code: str,
+    location: str,
+    app_id: str,
+    app_key: str,
+    pause_seconds: float = THROTTLED_PAUSE_SECONDS,
+    retry_wait_seconds: float = THROTTLED_RETRY_WAIT_SECONDS,
+) -> ProfileSearchResult:
+    """Cherche une seule zone, un mot-clé après l'autre, en respectant la limite de débit.
+
+    Sur un 429, attend une fois puis réessaie ; si Adzuna refuse encore, s'arrête et signale
+    `rate_limited` pour que l'appelant reprenne plus tard au lieu d'enchaîner les refus.
+    """
+    terms = ordered_profile_terms(profile)
+    if not terms:
+        raise JobSourceError("Renseigne le poste visé ou au moins une compétence dans ton profil.")
+
+    label = _target_label(country_code, location)
+    listings_by_url: dict[str, SourceListing] = {}
+    failures: list[tuple[str, str]] = []
+    filtered_language_count = 0
+    rate_limited = False
+
+    for index, keyword in enumerate(profile_search_keywords(profile, country_code)):
+        if index:
+            time.sleep(pause_seconds)
+        query = JobSearchQuery(keywords=[keyword], locations=[location] if location else [])
+        listings: list[SourceListing] | None = None
+        for attempt in range(2):
+            try:
+                listings = search_adzuna(query, country_code, app_id, app_key, 1)
+                break
+            except AdzunaRateLimited:
+                if attempt == 0:
+                    time.sleep(retry_wait_seconds)
+                    continue
+                rate_limited = True
+            except JobSourceError as error:
+                failures.append((f"{label} — « {keyword} »", str(error)))
+            break
+        if rate_limited:
+            break
+        for listing in listings or []:
+            if country_code != "fr" and not is_french_or_english(listing):
+                filtered_language_count += 1
+                continue
+            listings_by_url.setdefault(str(listing.original_url), listing)
+
+    return ProfileSearchResult(
+        listings=tuple(listings_by_url.values()),
+        failed_targets=tuple(failures),
+        searched_targets=(label,),
+        search_terms=terms,
+        filtered_language_count=filtered_language_count,
+        rate_limited=rate_limited,
     )
 
 
@@ -334,6 +402,10 @@ def search_adzuna(
         with urlopen(request, timeout=ADZUNA_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read())
     except HTTPError as error:
+        if error.code == 429:
+            raise AdzunaRateLimited(
+                "Adzuna a refusé la recherche (HTTP 429) : limite de requêtes atteinte."
+            ) from error
         raise JobSourceError(f"Adzuna a refusé la recherche (HTTP {error.code}).") from error
     except (URLError, TimeoutError, ConnectionResetError) as error:
         raise JobSourceError("Impossible de joindre l'API Adzuna. Vérifie la connexion.") from error

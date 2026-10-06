@@ -5,6 +5,7 @@ import logging
 import re
 import threading
 import time
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -21,7 +22,7 @@ from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import DuplicateOfferURL, create_offer
 from src.services.job_sources.adzuna import (
     LOCAL_SEARCH_LOCATIONS,
-    search_adzuna_for_profile,
+    search_adzuna_throttled,
 )
 from src.services.job_sources.base import JobSourceError, SourceListing
 from src.services.job_sources.france_travail import (
@@ -135,6 +136,36 @@ def save_watcher_config(config: WatcherConfig) -> None:
     )
 
 
+def get_adzuna_cursor_path() -> Path:
+    return get_data_dir() / "adzuna_cursor.json"
+
+
+def _load_adzuna_cursor(target_count: int) -> int:
+    """Zone d'Adzuna où reprendre après une limite de requêtes (0 = depuis le début)."""
+    try:
+        position = int(json.loads(get_adzuna_cursor_path().read_text(encoding="utf-8"))["next"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0
+    return position if 0 <= position < target_count else 0
+
+
+def _save_adzuna_cursor(position: int) -> None:
+    path = get_adzuna_cursor_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"next": position}), encoding="utf-8")
+
+
+def _normalize_key_part(value: str | None) -> str:
+    text = unicodedata.normalize("NFKD", value or "")
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"\W+", " ", text.casefold()).strip()
+
+
+def offer_identity_key(title: str, company: str | None, location: str | None) -> str:
+    """Clé d'unicité d'une annonce : une même offre republiée change d'URL (suivi, id)."""
+    return "|".join(_normalize_key_part(part) for part in (title, company, location))
+
+
 def _is_url_already_in_db(session: Session, url: str) -> bool:
     if not url:
         return False
@@ -169,29 +200,39 @@ def run_watcher_cycle(
             logger.warning(err_msg)
             result.errors.append(err_msg)
 
-    # 2. Collecte Adzuna (si activée et identifiants disponibles)
+    # 2. Collecte Adzuna (si activée et identifiants disponibles) : une zone à la fois, espacée.
     if cfg.enable_adzuna:
         app_id, app_key = get_adzuna_credentials(secrets)
         if app_id and app_key:
             result.adzuna_scanned = True
-            for country in cfg.adzuna_countries:
+            adzuna_targets = [
+                (country, location)
+                for country in cfg.adzuna_countries
+                for location in (LOCAL_SEARCH_LOCATIONS if country == "fr" else ("",))
+            ]
+            start = _load_adzuna_cursor(len(adzuna_targets))
+            next_cursor = 0
+            for position in range(start, len(adzuna_targets)):
+                country, location = adzuna_targets[position]
                 try:
-                    targets = (
-                        [(country, loc) for loc in LOCAL_SEARCH_LOCATIONS]
-                        if country == "fr"
-                        else [(country, "")]
+                    search_res = search_adzuna_throttled(
+                        profile, country, location, app_id, app_key
                     )
-                    search_res = search_adzuna_for_profile(
-                        profile=profile,
-                        targets=targets,
-                        app_id=app_id,
-                        app_key=app_key,
-                    )
-                    collected_listings.extend(search_res.listings)
-                    for err_target, err_msg in search_res.failed_targets:
-                        result.errors.append(f"Adzuna ({country}/{err_target}): {err_msg}")
                 except Exception as error:
-                    result.errors.append(f"Adzuna ({country}): {error}")
+                    zone = location or "pays"
+                    result.errors.append(f"Adzuna ({country}/{zone}): {error}")
+                    continue
+                collected_listings.extend(search_res.listings)
+                for err_target, err_msg in search_res.failed_targets:
+                    result.errors.append(f"Adzuna ({err_target}): {err_msg}")
+                if search_res.rate_limited:
+                    next_cursor = position
+                    result.errors.append(
+                        f"Adzuna : limite de requêtes atteinte à {location or country} ; "
+                        "la prochaine récupération reprendra à cette zone."
+                    )
+                    break
+            _save_adzuna_cursor(next_cursor)
 
     # 3. Collecte France Travail (si activée et identifiants disponibles)
     if cfg.enable_france_travail:
@@ -217,9 +258,20 @@ def run_watcher_cycle(
 
     # 4. Filtrage, déduplication et import en base
     with Session(engine) as session:
+        known_keys = {
+            offer_identity_key(title, company, location)
+            for title, company, location in session.execute(
+                select(JobOffer.title, JobOffer.company, JobOffer.location)
+            )
+        }
         for listing in collected_listings:
             listing_url = str(listing.original_url) if listing.original_url else ""
             if _is_url_already_in_db(session, listing_url):
+                result.duplicates_skipped += 1
+                continue
+
+            identity = offer_identity_key(listing.title, listing.company, listing.location)
+            if identity in known_keys:
                 result.duplicates_skipped += 1
                 continue
 
@@ -264,6 +316,7 @@ def run_watcher_cycle(
                         status="À examiner",
                     )
                     created_offer = create_offer(engine, offer_to_save)
+                    known_keys.add(identity)
                     result.new_offers_imported += 1
                     company_name = temp_offer.company or "Entreprise inconnue"
                     result.imported_offer_titles.append(
