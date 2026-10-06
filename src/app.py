@@ -340,7 +340,7 @@ def show_profile_form(engine: Engine, profile: ProfileData) -> None:
         edited_skills = st.data_editor(
             skill_rows,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key="profile_skills",
             column_config={
                 "Compétence": st.column_config.TextColumn("Compétence"),
@@ -1353,11 +1353,38 @@ def _show_france_travail_tab(engine: Engine, profile: ProfileData) -> None:
                     st.rerun()
 
 
+def _show_job_board_help() -> None:
+    """Explique en clair ce qu'est un « tableau » Greenhouse ou Lever et comment le trouver."""
+    with st.expander("C'est quoi un tableau d'offres Greenhouse ou Lever ?"):
+        st.markdown(
+            """
+**Greenhouse** et **Lever** ne sont pas des sites d'emploi comme Indeed : ce sont des
+**logiciels de recrutement** que des entreprises (surtout tech et startups, souvent
+internationales) utilisent pour publier leurs offres. Chaque entreprise y a sa propre page
+carrière, son **tableau d'offres** (« board »).
+
+Tu ne peux donc pas y *chercher* des offres : tu **choisis une entreprise** et l'application
+lit ses offres publiées.
+
+**Comment trouver le tableau d'une entreprise**
+1. Va sur la page « Carrières » ou « Jobs » du site de l'entreprise et ouvre une offre.
+2. Regarde l'adresse de la page. Si elle commence par `boards.greenhouse.io/…` ou
+   `jobs.lever.co/…` (ou `jobs.eu.lever.co/…`), l'entreprise utilise cet outil.
+3. Copie l'adresse complète (ou seulement le nom qui suit, par exemple `ateliertech`) dans le
+   champ : l'application en extrait l'identifiant.
+
+Si l'adresse n'a rien à voir avec ces deux noms, l'entreprise utilise un autre outil : il n'y a
+rien à ajouter. Beaucoup de PME françaises sont dans ce cas.
+            """
+        )
+
+
 def _show_targeted_job_boards_tab(engine: Engine, profile: ProfileData) -> None:
     st.write(
-        "Collecte les annonces publiées directement depuis le tableau de recrutement d'une "
-        "entreprise via les API publiques officielles Greenhouse ou Lever."
+        "Lis les offres publiées par **une entreprise précise** sur sa page carrière "
+        "Greenhouse ou Lever, via leurs API publiques officielles."
     )
+    _show_job_board_help()
     st.caption(
         f"Connecteurs officiels en lecture seule : [{GREENHOUSE_DESCRIPTOR.display_name}]"
         f"({GREENHOUSE_DESCRIPTOR.documentation_url}) et [{LEVER_DESCRIPTOR.display_name}]"
@@ -1810,9 +1837,14 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             st.success("Configuration de la veille enregistrée !")
             st.rerun()
 
-    st.subheader("Tableaux employeurs surveillés (Greenhouse & Lever)")
+    st.subheader("Entreprises surveillées (Greenhouse & Lever)")
+    st.caption(
+        "Les offres de ces entreprises sont relues à chaque cycle de veille. Ajoute une "
+        "entreprise seulement si sa page carrière utilise Greenhouse ou Lever."
+    )
+    _show_job_board_help()
     if not cfg.targets:
-        st.info("Aucun tableau employeur configuré pour le moment.")
+        st.info("Aucune entreprise surveillée pour le moment.")
     else:
         for idx, target in enumerate(cfg.targets):
             cols = st.columns([3, 2, 2, 1])
@@ -1831,11 +1863,12 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
                     save_watcher_config(cfg)
                     st.rerun()
 
-    with st.expander("Ajouter un tableau employeur à surveiller"):
+    with st.expander("Ajouter une entreprise à surveiller"):
         with st.form("add_target_form"):
             new_platform = st.selectbox("Plateforme", ["greenhouse", "lever"])
             new_target = st.text_input(
-                "Identifiant / Slug / URL du board", placeholder="ex: ateliertech"
+                "Identifiant ou adresse de sa page carrière",
+                placeholder="ex: ateliertech ou https://boards.greenhouse.io/ateliertech",
             )
             new_name = st.text_input(
                 "Nom de l'entreprise (optionnel)", placeholder="ex: Atelier Tech"
@@ -1981,14 +2014,14 @@ def _show_tailored_resume_batch(engine: Engine, profile: ProfileData) -> None:
                             ),
                             mime="application/pdf",
                             key=f"tailored_batch_download_{offer.id}",
-                            use_container_width=True,
+                            width="stretch",
                         )
                 else:
                     st.button(
                         "PDF non généré",
                         key=f"tailored_batch_pdf_unavailable_{offer.id}",
                         disabled=True,
-                        use_container_width=True,
+                        width="stretch",
                     )
 
     selected_offers = [

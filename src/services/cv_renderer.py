@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 
+from src.services.job_titles import extract_job_role
+
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 BASE_CV_PATH = PROJECT_DIR / "data" / "cv_base.json"
 BASE_CV_EXAMPLE_PATH = PROJECT_DIR / "data" / "cv_base.json.example"
@@ -104,7 +106,7 @@ def tailored_cv_filename(
     pieces = [
         slug(str(data.get("name", "")))[:40],
         "cv",
-        slug(target_role)[:48],
+        slug(extract_job_role(target_role))[:48],
         slug(target_company)[:36],
     ]
     return "-".join(piece for piece in pieces if piece) + ".pdf"

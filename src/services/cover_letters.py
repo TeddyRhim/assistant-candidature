@@ -14,9 +14,9 @@ from src.models import (
     JobOffer,
     JobOfferData,
     ProfileData,
-    normalize_job_title,
 )
 from src.services.cv_renderer import load_base_cv_data, render_template_pdf
+from src.services.job_titles import extract_job_role
 from src.services.matching import compare_offer_to_profile
 
 MAX_COVER_LETTER_CHARACTERS = 12_000
@@ -33,7 +33,7 @@ def build_cover_letter(
 ) -> str:
     data = load_base_cv_data()
     company = (offer.company if offer else target_company).strip()
-    role = normalize_job_title(offer.title) if offer else profile.target_role
+    role = extract_job_role(offer.title, offer.location) if offer else profile.target_role
     if not role:
         role = "Développeur Full Stack"
     if not company and offer:

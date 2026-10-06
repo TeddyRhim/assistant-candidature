@@ -148,5 +148,5 @@ non des contraintes obligatoires. Les secteurs et le CV de référence restent �
 - Format préféré pour le CV exporté et style de mise en page existant à préserver ?
 
 Les décisions prises depuis (CV ATS une colonne à partir du JSON structuré, batch avec
-téléchargement individuel, lettre française avant traduction) et les questions qui restent
-ouvertes sont suivies dans [docs/suivi-projet-et-questions.md](suivi-projet-et-questions.md).
+téléchargement individuel, lettre française avant traduction) sont reportées dans
+[docs/roadmap.md](roadmap.md).

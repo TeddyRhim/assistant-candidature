@@ -101,8 +101,6 @@ et conditions de chaque plateforme et n'est pas promise par la feuille de route.
   - Intégration d'un onglet d'aperçu direct HTML (rendu fidèle immédiat sans dépendance de plugin).
   - Sécurisation de l'aperçu PDF intégré avec `<object>`/`<embed>` et lien de repli.
   - Bouton de téléchargement direct du PDF compilé par WeasyPrint.
-- Les autres travaux restants et les questions à renseigner sont regroupés dans
-  [docs/suivi-projet-et-questions.md](suivi-projet-et-questions.md).
 
 ## Historique : ordre conseillé pour la première session de développement
 

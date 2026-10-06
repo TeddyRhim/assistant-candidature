@@ -252,6 +252,11 @@ def _technology_level(
     return _technology_level(parent, profile, _depth + 1) * RELATED_TECHNOLOGY_FACTOR
 
 
+def mentions_technology(text: str) -> bool:
+    """Vrai si le texte cite au moins une technologie du catalogue (langage, framework, outil)."""
+    return any(_find_technology_evidence(text, technology) for technology in TECHNOLOGIES)
+
+
 def _find_technology_evidence(text: str, technology: Technology) -> str | None:
     for line in text.splitlines():
         for alias in technology.aliases:

@@ -19,8 +19,6 @@ uv run streamlit run src/app.py
 ```
 
 L'interface s'ouvre dans le navigateur et reste accessible localement. Les choix de conception et le périmètre sont décrits dans [docs/specifications.md](docs/specifications.md) et [docs/architecture.md](docs/architecture.md). Les étapes de réalisation sont dans [docs/roadmap.md](docs/roadmap.md).
-Le relevé complet de l'état actuel, des points restant à faire et des questions à compléter est
-dans [docs/suivi-projet-et-questions.md](docs/suivi-projet-et-questions.md).
 
 ## État
 
@@ -92,6 +90,10 @@ La rubrique **Recherche en ligne** propose deux modes de collecte :
 - **Adzuna (recherche par mots-clés)** : lance manuellement une recherche après configuration locale des identifiants (`ADZUNA_APP_ID` et `ADZUNA_APP_KEY`). Elle lance une requête distincte pour chacune des huit compétences prioritaires du profil, plus une requête pour le poste visé. En local, elle couvre la zone PACA élargie (Nice, Cannes, Var, Marseille) et Paris (classé après le local) ; à l'international, les pays sont choisis individuellement avec filtrage de langue. Les résultats sont dédoublonnés et classés selon la correspondance avec le profil.
 - **France Travail (API officielle)** : renvoie le texte complet des annonces, ce qui améliore le score et les lettres. Crée un compte sur [francetravail.io](https://francetravail.io/inscription), déclare une application abonnée à l'API « Offres d'emploi », puis ajoute `FRANCE_TRAVAIL_CLIENT_ID` et `FRANCE_TRAVAIL_CLIENT_SECRET` dans `.streamlit/secrets.toml` (ignoré par Git). La recherche couvre les départements choisis (06, 83, 13 et 75 par défaut), en CDI uniquement par défaut, avec import unitaire ou en lot des offres au-dessus du seuil. La veille automatique l'interroge aussi.
 - **Greenhouse & Lever (collecte ciblée par employeur)** : interroge directement les API publiques officielles en lecture seule des tableaux de recrutement d'entreprises cibles, sans clé API ni scraping. L'identifiant du tableau peut être saisi sous forme de slug ou d'URL complète (ex. `ateliertech` ou `https://boards.greenhouse.io/ateliertech`, `exampleco` ou `https://jobs.lever.co/exampleco` avec support des instances européennes `api.eu.lever.co`). Le connecteur nettoie le texte, détecte les contrats, les mentions de relocalisation et les e-mails de contact sourcés. Les offres peuvent être filtrées par mot-clé et importées individuellement ou en lot avec liaison automatique aux fiches entreprises locales.
+
+Les lettres, les CV ciblés et les noms de fichier reprennent le **poste seul** : « Développeur PHP
+Symfony (IT) H/F - CDI - Paris » devient « Développeur PHP Symfony ». Le genre (H/F), le contrat,
+la ville, l'entreprise et les slogans sont retirés, les précisions techniques courtes sont gardées.
 
 La page **File d'envoi** (rubrique Candidatures) regroupe les offres à traiter, classées par score
 global, avec l'état de leur CV et de leur lettre. Pour chaque offre : ouvre l'annonce, prépare puis
