@@ -83,6 +83,7 @@ from src.services.cv_renderer import (
     tailored_cv_filename,
     validate_base_cv_json,
 )
+from src.services.daily_run import load_last_run, run_daily
 from src.services.dossier_generator import prepare_dossier_for_offer, prepare_pending_dossiers
 from src.services.email_delivery import EmailDeliveryError, send_application_email
 from src.services.job_offers import (
@@ -1830,7 +1831,18 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
         except StreamlitSecretNotFoundError:
             secrets = {}
 
-        if st.button("Lancer un cycle de veille maintenant", type="primary"):
+        if st.button(
+            "Récupérer les annonces et préparer les dossiers",
+            type="primary",
+            help="Interroge toutes les sources, importe les offres pertinentes puis génère "
+            "CV et lettre. Même traitement que la tâche quotidienne planifiée.",
+        ):
+            with st.spinner("Collecte des annonces et préparation des dossiers..."):
+                daily_res = run_daily(engine, profile, cfg, secrets)
+                st.session_state["manual_daily_result"] = daily_res.to_dict()
+                st.rerun()
+
+        if st.button("Lancer un cycle de veille maintenant"):
             with st.spinner("Exécution du cycle de veille..."):
                 cycle_res = run_watcher_cycle(engine, profile, cfg, secrets)
                 st.session_state["manual_watcher_result"] = cycle_res.to_dict()
@@ -1859,6 +1871,26 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
                 watcher.stop()
                 st.warning("Veille arrêtée.")
                 st.rerun()
+
+    daily_res = st.session_state.get("manual_daily_result")
+    if daily_res:
+        st.success(
+            f"{daily_res['new_offers']} nouvelle(s) offre(s) sur {daily_res['listings_found']} "
+            f"annonce(s) analysée(s), {daily_res['dossiers_prepared']} dossier(s) prêt(s)."
+        )
+        for title in daily_res["imported_offer_titles"]:
+            st.markdown(f"- **{title}**")
+        if daily_res["errors"]:
+            with st.expander("Avertissements de la récupération"):
+                for err in daily_res["errors"]:
+                    st.caption(err)
+    else:
+        last_daily = load_last_run()
+        if last_daily:
+            st.caption(
+                f"Dernière récupération complète : {last_daily.started_at[:16].replace('T', ' ')} "
+                f"UTC — {last_daily.summary()}"
+            )
 
     manual_res = st.session_state.get("manual_watcher_result")
     if manual_res:
