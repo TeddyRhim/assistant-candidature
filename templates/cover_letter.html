@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Lettre de candidature - {{ name }}</title>
+<style>
+  @page { size: A4; margin: 22mm 25mm; }
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Open Sans", "DejaVu Sans", Arial, Helvetica, sans-serif;
+    color: #222;
+    font-size: 11pt;
+    line-height: 1.55;
+    margin: 0;
+  }
+  header {
+    border-bottom: 1.5pt solid #4a6f9c;
+    margin-bottom: 18mm;
+    padding-bottom: 5mm;
+  }
+  header h1 {
+    color: #17365d;
+    font-size: 17pt;
+    margin: 0 0 2mm;
+  }
+  .contact { color: #4a6f9c; font-size: 9pt; }
+  article p { margin: 0 0 5mm; }
+  article p:first-child { font-weight: bold; margin-bottom: 9mm; }
+  article p:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ name }}</h1>
+  <div class="contact">{% if email and phone %}{{ email }} · {{ phone }}{% elif email %}{{ email }}{% elif phone %}{{ phone }}{% endif %}</div>
+</header>
+<article>
+  {% for paragraph in paragraphs %}
+  <p>{{ paragraph }}</p>
+  {% endfor %}
+</article>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>CV - {{ name }}</title>
+<style>
+  @page { size: A4; margin: 12mm 14mm; }
+  :root { --accent: #5b9bd5; --text: #1a1a1a; --muted: #555; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Open Sans", "DejaVu Sans", Arial, Helvetica, sans-serif;
+    font-size: 8.8pt; line-height: 1.35; color: var(--text); margin: 0;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  header { text-align: center; margin-bottom: 8pt; }
+  header h1 { font-size: 24pt; font-weight: 800; margin: 0 0 3pt 0; text-transform: uppercase; }
+  .target-company { font-size: 8pt; color: var(--muted); margin-bottom: 2pt; }
+  .contact { font-size: 8pt; color: var(--muted); }
+  .contact .sep { margin: 0 4pt; }
+
+  h2 {
+    font-size: 11pt; text-transform: uppercase; margin: 12pt 0 6pt 0;
+    padding: 4pt 8pt; border: 0.6pt solid var(--accent); break-after: avoid;
+  }
+  .entry { margin-bottom: 8pt; break-inside: avoid; }
+  .entry-title { font-weight: bold; }
+  .entry-period { color: var(--muted); margin-bottom: 2pt; }
+  ul { margin: 2pt 0 0 0; padding-left: 14pt; }
+  li { margin-bottom: 1.5pt; }
+  .edu { margin-bottom: 4pt; padding-left: 4pt; }
+  .skill { margin-bottom: 2pt; padding-left: 4pt; }
+  .profile { padding-left: 4pt; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>{{ name }}</h1>
+  {% if target_company %}<div class="target-company">{{ target_company }}</div>{% endif %}
+  <div class="contact">
+    {%- for c in contact -%}
+      {%- if not loop.first %}<span class="sep">|</span>{% endif -%}
+      {%- if c.url %}<a href="{{ c.url }}">{{ c.text }}</a>{% else %}{{ c.text }}{% endif -%}
+    {%- endfor -%}
+  </div>
+</header>
+
+<section>
+  <h2>Profil</h2>
+  <div class="profile">{{ profile | md }}</div>
+</section>
+
+<section>
+  <h2>Expérience professionnelle</h2>
+  {% for job in experience %}
+  <div class="entry">
+    <div class="entry-title">{{ job.role }} - {{ job.company }}</div>
+    <div class="entry-period">{{ job.period }}</div>
+    <ul>
+      {% for b in job.bullets %}<li>{{ b | md }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Formation</h2>
+  {% for e in education %}<div class="edu">{{ e.text | md }}</div>{% endfor %}
+</section>
+
+<section>
+  <h2>Compétences</h2>
+  {% for s in skills %}
+  <div class="skill"><strong>{{ s.label }}</strong> : {{ s.details }}</div>
+  {% endfor %}
+</section>
+
+</body>
+</html>
