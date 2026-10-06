@@ -125,8 +125,34 @@ Chaque connecteur supplémentaire devra :
 - **Intégration** : onglet « France Travail » de **Recherche en ligne** (recherche manuelle, import
   unitaire ou en lot au-dessus du seuil) et veille automatique (fenêtre de 14 jours à chaque cycle).
 - **Non vérifié en conditions réelles** : le connecteur est testé sur des réponses simulées
-  conformes à la documentation consultée. Une première recherche avec de vrais identifiants peut
-  révéler un écart de format ; les erreurs d'authentification et de quota sont affichées clairement.
+  conformes à la documentation consultée. Au 6 octobre 2026, l'application de test n'était pas
+  abonnée à l'API « Offres d'emploi » (le jeton est refusé avec `invalid_scope`) : la page de
+  l'API n'était pas retrouvable dans le catalogue. La recherche d'offres n'a donc pas pu être
+  validée avec de vrais identifiants ; l'erreur affichée distingue « identifiants faux » et
+  « API non ajoutée à l'application ».
+
+## La Bonne Boîte v2 (candidatures spontanées)
+
+- **Rôle** : classer les entreprises par potentiel d'embauche pour un métier (code ROME) et une
+  zone, y compris sans offre publiée. Alimente **Découvrir des entreprises → La Bonne Boîte**.
+- **Authentification** : même jeton OAuth2 que France Travail, avec les scopes
+  `api_labonneboitev2 search office` (le scope `api_labonneboitev2` seul est accepté mais les
+  recherches répondent 403 `insufficient_scope`).
+- **Recherche** : `GET https://api.francetravail.io/partenaire/labonneboite/v2/recherche` (sans
+  barre finale ; le chemin documenté `search/` répond 403) avec `rome`, `department_number`
+  (départements entiers : 06, 75, 83), `page_size` (100 maximum) et `page`. Le paramètre
+  `sort_by=hiring_score` est refusé : le tri se fait localement.
+- **Quota** : 2 appels par seconde (espacés par le connecteur) ; 5 pages de 100 au maximum.
+- **Données** : SIRET, nom, ville, NAF, tranche d'effectif, score de potentiel (0 à 100,
+  relatif) et un indicateur `email` oui/non. **L'adresse e-mail n'est jamais fournie** : le
+  contact reste à trouver sur le site de l'entreprise. La fiche créée cite l'annuaire officiel
+  des entreprises comme source et précise que le score ne prouve ni une offre ni une équipe.
+- **Licence** : licence ouverte ; l'API demande de faire apparaître le logo France Travail dans
+  l'application qui présente les résultats. L'application affiche la mention de source en texte,
+  sans logo.
+- **Vérifié en conditions réelles** le 6 octobre 2026 : 36 entreprises pour M1805 dans les
+  départements 06 et 83. Codes métier proposés : M1805 (développeur informatique), M1806
+  (consultant fonctionnel SI), M1810 (technicien d'exploitation informatique).
 
 ## Connecteurs employeurs ciblés : Greenhouse et Lever
 

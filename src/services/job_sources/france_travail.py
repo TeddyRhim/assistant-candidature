@@ -89,19 +89,31 @@ def _post_token_request(client_id: str, client_secret: str, scope: str) -> dict[
     return payload
 
 
-def get_access_token(client_id: str, client_secret: str) -> str:
-    """Retourne un jeton OAuth2 (flux client_credentials), mis en cache jusqu'à expiration."""
+def get_access_token(
+    client_id: str,
+    client_secret: str,
+    *,
+    scopes: tuple[str, ...] = (FRANCE_TRAVAIL_SCOPE, FRANCE_TRAVAIL_FALLBACK_SCOPE),
+    api_label: str = "Offres d'emploi",
+) -> str:
+    """Retourne un jeton OAuth2 (flux client_credentials), mis en cache jusqu'à expiration.
+
+    `scopes` liste les scopes à essayer dans l'ordre (le suivant sert de repli) ; `api_label`
+    nomme l'API dans les messages d'erreur.
+    """
     if not client_id.strip() or not client_secret.strip():
         raise JobSourceError(
             "Les identifiants France Travail (client id et secret) doivent être configurés "
             "localement."
         )
-    cache_key = client_id.strip()
+    cache_key = f"{client_id.strip()}|{scopes[0]}"
     with _TOKEN_LOCK:
         cached = _TOKEN_CACHE.get(cache_key)
         if cached and cached[1] > time.monotonic():
             return cached[0]
-        payload = _request_token_with_fallback(client_id.strip(), client_secret.strip())
+        payload = _request_token_with_fallback(
+            client_id.strip(), client_secret.strip(), scopes, api_label
+        )
         token = payload.get("access_token")
         if not isinstance(token, str) or not token:
             raise JobSourceError("France Travail n'a pas renvoyé de jeton d'accès valide.")
@@ -111,17 +123,22 @@ def get_access_token(client_id: str, client_secret: str) -> str:
         return token
 
 
-def _request_token_with_fallback(client_id: str, client_secret: str) -> dict[str, object]:
-    for scope in (FRANCE_TRAVAIL_SCOPE, FRANCE_TRAVAIL_FALLBACK_SCOPE):
+def _request_token_with_fallback(
+    client_id: str,
+    client_secret: str,
+    scopes: tuple[str, ...],
+    api_label: str,
+) -> dict[str, object]:
+    for index, scope in enumerate(scopes):
         try:
             return _post_token_request(client_id, client_secret, scope)
         except HTTPError as error:
-            if error.code == 400 and scope == FRANCE_TRAVAIL_SCOPE:
-                continue  # scope refusé : on retente avec le scope minimal
+            if error.code == 400 and index < len(scopes) - 1:
+                continue  # scope refusé : on retente avec le scope suivant
             oauth_error = _oauth_error_code(error)
             if oauth_error == "invalid_scope":
                 raise JobSourceError(
-                    "L'application France Travail n'est pas abonnée à l'API « Offres d'emploi » "
+                    f"L'application France Travail n'est pas abonnée à l'API « {api_label} » "
                     "(scope refusé). Sur francetravail.io, ajoute cette API à ton application."
                 ) from error
             if error.code in {400, 401, 403}:

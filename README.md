@@ -69,6 +69,14 @@ PDF suit les modifications avant enregistrement. Le bouton d'enregistrement met 
 restent indépendants. Les PDF ciblés et pièces jointes ont un nom descriptif fondé sur le nom du
 candidat, le poste et l'entreprise, sans compteur artificiel.
 
+**Découvrir des entreprises** propose deux sources. **La Bonne Boîte** (France Travail) classe les
+entreprises des départements 06, 75 et 83 par potentiel d'embauche pour un métier (M1805
+développeur par défaut), y compris sans offre publiée : c'est la meilleure piste pour les
+candidatures spontanées. Elle utilise les mêmes identifiants que France Travail, avec l'API
+« La Bonne Boîte » ajoutée à ton application. Le score est une estimation relative, et l'API ne
+donne jamais d'e-mail (seulement s'il en existe un) : le contact est à trouver sur le site de
+l'entreprise. Le **registre public** liste les sociétés par activité déclarée.
+
 Dans **Découvrir des entreprises**, ajoute les pistes vérifiées à **Entreprises à prospecter** ;
 elles sont ensuite proposées dans **Candidature spontanée**.
 

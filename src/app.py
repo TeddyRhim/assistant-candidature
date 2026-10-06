@@ -53,6 +53,7 @@ from src.services.companies import (
     update_company,
 )
 from src.services.company_registry import (
+    COMPANY_DEPARTMENT_LABELS,
     SOFTWARE_ACTIVITY_CODES,
     CompanyRegistryError,
     DuplicateCompanyCandidate,
@@ -101,6 +102,23 @@ from src.services.job_sources.adzuna import (
     start_profile_search,
 )
 from src.services.job_sources.base import SourceListing
+from src.services.job_sources.bonne_boite import (
+    DEFAULT_DEPARTMENTS as BONNE_BOITE_DEFAULT_DEPARTMENTS,
+)
+from src.services.job_sources.bonne_boite import (
+    DEFAULT_ROME_CODES as BONNE_BOITE_DEFAULT_ROME_CODES,
+)
+from src.services.job_sources.bonne_boite import (
+    ROME_CODES as BONNE_BOITE_ROME_CODES,
+)
+from src.services.job_sources.bonne_boite import (
+    SUPPORTED_DEPARTMENTS as BONNE_BOITE_SUPPORTED_DEPARTMENTS,
+)
+from src.services.job_sources.bonne_boite import (
+    BonneBoiteCompany,
+    promote_bonne_boite_company,
+    search_bonne_boite,
+)
 from src.services.job_sources.france_travail import (
     DEPARTMENT_NAMES as FRANCE_TRAVAIL_DEPARTMENT_NAMES,
 )
@@ -2476,6 +2494,151 @@ def show_companies_page(engine: Engine, profile: ProfileData) -> None:
 
 def show_company_discovery_page(engine: Engine) -> None:
     st.title("Découvrir des entreprises")
+    bonne_boite_tab, registry_tab = st.tabs(
+        ["La Bonne Boîte (potentiel d'embauche)", "Registre public (activité déclarée)"]
+    )
+    with bonne_boite_tab:
+        _show_bonne_boite_tab(engine)
+    with registry_tab:
+        _show_registry_discovery_tab(engine)
+
+
+def _show_bonne_boite_tab(engine: Engine) -> None:
+    st.write(
+        "La Bonne Boîte (France Travail) classe les entreprises qui ont le plus de chances "
+        "de recruter dans les 6 prochains mois pour un métier, y compris sans offre publiée : "
+        "idéal pour les candidatures spontanées."
+    )
+    st.warning(
+        "Le score est une estimation statistique relative (calculée sur les recrutements "
+        "passés) : il ne prouve ni une offre ouverte ni une équipe de développement. L'API "
+        "ne fournit aucun e-mail : elle indique seulement si une adresse est connue. Trouve "
+        "le contact sur le site de l'entreprise avant de candidater."
+    )
+    try:
+        secrets = _france_travail_secrets()
+    except StreamlitSecretNotFoundError:
+        secrets = {}
+    client_id, client_secret = get_france_travail_credentials(secrets)
+    if not client_id or not client_secret:
+        st.warning(
+            "Configure FRANCE_TRAVAIL_CLIENT_ID et FRANCE_TRAVAIL_CLIENT_SECRET (voir l'onglet "
+            "France Travail de « Recherche en ligne ») et abonne l'application à l'API "
+            "« La Bonne Boîte » sur francetravail.io."
+        )
+        return
+
+    with st.form("bonne_boite_search"):
+        departments = st.multiselect(
+            "Départements entiers",
+            options=list(BONNE_BOITE_SUPPORTED_DEPARTMENTS),
+            default=list(BONNE_BOITE_DEFAULT_DEPARTMENTS),
+            format_func=lambda code: f"{code} — {COMPANY_DEPARTMENT_LABELS[code]}",
+        )
+        rome_codes = st.multiselect(
+            "Métiers (codes ROME)",
+            options=list(BONNE_BOITE_ROME_CODES),
+            default=list(BONNE_BOITE_DEFAULT_ROME_CODES),
+            format_func=lambda code: f"{code} — {BONNE_BOITE_ROME_CODES[code]}",
+        )
+        software_only = st.checkbox(
+            "Uniquement les sociétés d'informatique (activité NAF 62.xx)",
+            value=False,
+            help="Sans ce filtre, les entreprises d'autres secteurs qui recrutent aussi des "
+            "développeurs sont affichées (leur activité est indiquée).",
+        )
+        submitted = st.form_submit_button("Rechercher avec La Bonne Boîte", type="primary")
+
+    if submitted:
+        with st.spinner("Interrogation de La Bonne Boîte…"):
+            try:
+                result = search_bonne_boite(
+                    client_id,
+                    client_secret,
+                    rome_codes=tuple(rome_codes),
+                    departments=tuple(departments),
+                )
+            except JobSourceError as error:
+                st.error(str(error))
+                return
+        st.session_state["lbb_results"] = [
+            company.model_dump(mode="json") for company in result.companies
+        ]
+        st.session_state["lbb_total_hits"] = result.total_hits
+        st.session_state["lbb_truncated"] = result.truncated
+
+    results_data = st.session_state.get("lbb_results")
+    if results_data is None:
+        return
+    companies = [BonneBoiteCompany.model_validate(item) for item in results_data]
+    if software_only:
+        companies = [company for company in companies if company.is_software_activity]
+    prospect_keys = {
+        (company.name.casefold(), company.location.casefold())
+        for company in list_companies(engine)
+    }
+    saved_sirens = {candidate.siren for candidate in list_company_candidates(engine)}
+
+    flash = st.session_state.pop("lbb_flash", None)
+    if flash:
+        st.success(flash)
+    st.subheader(f"{len(companies)} entreprise(s) classée(s) par potentiel d'embauche")
+    if st.session_state.get("lbb_truncated"):
+        st.info(
+            f"{st.session_state.get('lbb_total_hits', 0)} entreprises correspondent ; seules les "
+            "meilleures sont affichées. Restreins les départements ou le métier."
+        )
+    st.caption("Données La Bonne Boîte — France Travail (licence ouverte).")
+    if not companies:
+        st.info("Aucune entreprise pour ces critères.")
+        return
+
+    for index, company in enumerate(companies):
+        email_label = {True: "oui", False: "non", None: "inconnu"}[company.has_known_email]
+        with st.expander(
+            f"{company.hiring_potential:.0f}/100 · {company.name} — {company.city} "
+            f"({company.department})"
+        ):
+            st.progress(min(max(company.hiring_potential, 0.0), 100.0) / 100)
+            st.write(f"**Activité :** {company.naf} — {company.naf_label or 'non précisée'}")
+            if not company.is_software_activity:
+                st.caption("Hors informatique : l'entreprise peut avoir une équipe interne.")
+            st.write(f"**Effectif :** {company.employee_range or 'non renseigné'}")
+            st.write(
+                f"**Adresse de contact connue de La Bonne Boîte :** {email_label} "
+                "(l'adresse n'est pas communiquée)"
+            )
+            st.markdown(f"[Fiche officielle de l'entreprise]({company.source_url})")
+            prospect_key = (company.name.casefold(), company.city.casefold())
+            if prospect_key in prospect_keys:
+                st.info("Cette entreprise est déjà dans « Entreprises à prospecter ».")
+            elif st.button(
+                "Ajouter aux entreprises à prospecter",
+                key=f"promote_lbb_{index}",
+            ):
+                try:
+                    created = promote_bonne_boite_company(engine, company)
+                except DuplicateCompany as error:
+                    st.info(str(error))
+                else:
+                    st.session_state["lbb_flash"] = (
+                        f"{created.name} ajoutée à « Entreprises à prospecter »."
+                    )
+                    st.rerun()
+            if company.siren not in saved_sirens and st.button(
+                "Garder comme piste à vérifier",
+                key=f"save_lbb_{index}",
+            ):
+                try:
+                    save_company_candidate(engine, company.to_candidate())
+                except DuplicateCompanyCandidate as error:
+                    st.info(str(error))
+                else:
+                    st.session_state["lbb_flash"] = "Piste enregistrée localement."
+                    st.rerun()
+
+
+def _show_registry_discovery_tab(engine: Engine) -> None:
     st.write(
         "Recherche des sociétés actives dans les Alpes-Maritimes (06), à Paris (75) ou "
         "dans le Var (83) à partir de l'API publique Recherche d'entreprises. Les pistes "
