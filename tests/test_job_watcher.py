@@ -174,6 +174,16 @@ def test_run_watcher_cycle_imports_matching_and_skips_duplicates(tmp_path: Path)
     assert second_result.low_match_skipped == 1
 
 
+def test_default_exclusions_filter_lead_positions() -> None:
+    from src.services.job_watcher import DEFAULT_EXCLUDED_TITLE_KEYWORDS
+
+    keywords = list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
+    assert find_excluded_keyword("Lead Dev SYMFONY Senior (IT)", keywords) == "lead"
+    assert find_excluded_keyword("Architecte / Lead PHP - CDI", keywords) == "lead"
+    assert find_excluded_keyword("Développeur PHP Symfony", keywords) is None
+    assert find_excluded_keyword("Développeur Leadership Tools", keywords) is None
+
+
 def test_find_excluded_keyword_matches_whole_words_only() -> None:
     keywords = ["stage", "java", "freelance"]
 

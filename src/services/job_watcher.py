@@ -50,6 +50,7 @@ DEFAULT_EXCLUDED_TITLE_KEYWORDS = (
     "freelance",
     "java",
     "angular",
+    "lead",
 )
 
 
