@@ -20,6 +20,24 @@ uv run streamlit run src/app.py
 
 L'interface s'ouvre dans le navigateur et reste accessible localement. Les choix de conception et le périmètre sont décrits dans [docs/specifications.md](docs/specifications.md) et [docs/architecture.md](docs/architecture.md). Les étapes de réalisation sont dans [docs/roadmap.md](docs/roadmap.md).
 
+## Récupération quotidienne automatique
+
+`uv run python -m src.cli daily` interroge toutes les sources configurées dans la page **Veille**,
+importe les offres pertinentes puis prépare CV et lettre. C'est le même traitement que le bouton
+« Récupérer les annonces et préparer les dossiers ». Aucune candidature n'est envoyée.
+
+Pour le lancer chaque jour avec le Planificateur de tâches Windows :
+
+```powershell
+.\scripts\install_daily_task.ps1              # tous les jours à 08:00
+.\scripts\install_daily_task.ps1 -At "07:30"  # autre heure
+.\scripts\install_daily_task.ps1 -Remove      # supprime la tâche
+```
+
+Si le PC est éteint à l'heure prévue, la tâche démarre au prochain allumage. Les journaux sont
+dans `data/logs/` (30 derniers jours) et le dernier résultat s'affiche dans la page **Veille**.
+Les clés des sources sont lues dans `.streamlit/secrets.toml`.
+
 ## État
 
 Le socle local, l'édition du profil, l'import du CV et la gestion manuelle des offres sont en
