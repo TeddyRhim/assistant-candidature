@@ -1410,7 +1410,8 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
                 f"- **Dossiers pré-générés (CV + Lettre)** : {last_res.dossiers_prepared}\n"
                 f"- **Doublons ignorés** : {last_res.duplicates_skipped}\n"
                 f"- **Score insuffisant (< {cfg.min_match_percentage}%)** : "
-                f"{last_res.low_match_skipped}"
+                f"{last_res.low_match_skipped}\n"
+                f"- **Titres exclus (stage, freelance…)** : {last_res.excluded_skipped}"
             )
             if last_res.imported_offer_titles:
                 with st.expander("Dernières offres importées automatiquement"):
@@ -1492,7 +1493,15 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             max_value=90,
             value=cfg.min_match_percentage,
             step=5,
-            help="Seules les annonces dépassant ce score seront importées.",
+            help=(
+                "Score global affiché dans les offres (compétences, intitulé, contrat, lieu). "
+                "Seules les annonces à ce score ou au-dessus sont importées."
+            ),
+        )
+        excluded_raw = st.text_input(
+            "Mots exclus du titre (séparés par des virgules)",
+            value=", ".join(cfg.excluded_title_keywords),
+            help="Une annonce dont le titre contient l'un de ces mots entiers est ignorée.",
         )
         freq_options = [1, 2, 4, 8, 24]
         cur_hours = max(1, cfg.interval_seconds // 3600)
@@ -1519,6 +1528,9 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
         submitted = st.form_submit_button("Enregistrer la configuration")
         if submitted:
             cfg.min_match_percentage = min_score
+            cfg.excluded_title_keywords = [
+                word.strip() for word in excluded_raw.split(",") if word.strip()
+            ]
             cfg.interval_seconds = interval_hours * 3600
             cfg.enable_adzuna = enable_adzuna
             cfg.auto_import = auto_import

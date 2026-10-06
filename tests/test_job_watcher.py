@@ -14,6 +14,7 @@ from src.services.job_watcher import (
     MonitoredTarget,
     PeriodicJobWatcher,
     WatcherConfig,
+    find_excluded_keyword,
     load_watcher_config,
     run_watcher_cycle,
     save_watcher_config,
@@ -39,6 +40,7 @@ def test_watcher_config_save_and_load(tmp_path: Path) -> None:
         default_cfg = load_watcher_config()
         assert default_cfg.targets == []
         assert default_cfg.min_match_percentage == 40
+        assert "stage" in default_cfg.excluded_title_keywords
 
         custom_cfg = WatcherConfig(
             targets=[
@@ -168,6 +170,63 @@ def test_run_watcher_cycle_imports_matching_and_skips_duplicates(tmp_path: Path)
     assert second_result.new_offers_imported == 0
     assert second_result.duplicates_skipped == 2
     assert second_result.low_match_skipped == 1
+
+
+def test_find_excluded_keyword_matches_whole_words_only() -> None:
+    keywords = ["stage", "java", "freelance"]
+
+    assert find_excluded_keyword("Stage - Ingénieur Développement", keywords) == "stage"
+    assert find_excluded_keyword("Développeur Java/Angular F/H", keywords) == "java"
+    assert find_excluded_keyword("Développeur JavaScript", keywords) is None
+    assert find_excluded_keyword("Développeur PHP Symfony", keywords) is None
+    assert find_excluded_keyword("Développeur PHP", [" ", ""]) is None
+
+
+def test_cycle_skips_excluded_titles_and_keeps_score_out_of_description(
+    tmp_path: Path,
+) -> None:
+    engine = create_database_engine(tmp_path / "test_excluded.sqlite3")
+    initialize_database(engine)
+    profile = _sample_profile()
+
+    listings = [
+        SourceListing(
+            source_id="ok",
+            source_name="Greenhouse (Atelier Tech)",
+            title="Développeur Symfony",
+            company="Atelier Tech",
+            location="Nice",
+            original_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/10"),
+            description="PHP Symfony API REST SQL.",
+            public_contact_email="jobs@ateliertech.example",
+            contact_source_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/10"),
+        ),
+        SourceListing(
+            source_id="stage",
+            source_name="Greenhouse (Atelier Tech)",
+            title="Stage Développeur Symfony",
+            company="Atelier Tech",
+            location="Nice",
+            original_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/11"),
+            description="PHP Symfony API REST SQL.",
+        ),
+    ]
+    config = WatcherConfig(
+        targets=[MonitoredTarget(platform="greenhouse", target="ateliertech")],
+        enable_adzuna=False,
+        min_match_percentage=40,
+        auto_prepare_dossier=False,
+    )
+
+    with patch("src.services.job_watcher.fetch_greenhouse_listings", return_value=listings):
+        result = run_watcher_cycle(engine, profile, config)
+
+    assert result.excluded_skipped == 1
+    assert result.new_offers_imported == 1
+    [offer] = list_offers(engine)
+    assert offer.title == "Développeur Symfony"
+    assert "Score de pertinence" not in offer.description
+    assert "Contact public : jobs@ateliertech.example" in offer.description
 
 
 def test_periodic_watcher_thread_start_and_stop(tmp_path: Path) -> None:

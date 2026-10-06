@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Mapping
@@ -25,11 +26,34 @@ from src.services.job_sources.adzuna import (
 from src.services.job_sources.base import JobSourceError, SourceListing
 from src.services.job_sources.greenhouse import fetch_greenhouse_listings
 from src.services.job_sources.lever import fetch_lever_listings
-from src.services.matching import compare_offer_to_profile
+from src.services.matching import assess_offer_fit
 
 logger = logging.getLogger(__name__)
 
 PlatformType = Literal["greenhouse", "lever"]
+
+# Mots (entiers) du titre qui écartent une annonce : hors cible pour un CDI backend PHP.
+DEFAULT_EXCLUDED_TITLE_KEYWORDS = (
+    "stage",
+    "stagiaire",
+    "alternance",
+    "alternant",
+    "apprenti",
+    "apprentissage",
+    "internship",
+    "freelance",
+    "java",
+    "angular",
+)
+
+
+def find_excluded_keyword(title: str, keywords: list[str]) -> str | None:
+    """Retourne le premier mot-clé exclu présent comme mot entier dans le titre."""
+    for keyword in keywords:
+        word = keyword.strip()
+        if word and re.search(rf"(?<!\w){re.escape(word)}(?!\w)", title, re.IGNORECASE):
+            return word
+    return None
 
 
 class MonitoredTarget(BaseModel):
@@ -49,6 +73,9 @@ class WatcherConfig(BaseModel):
     enable_adzuna: bool = True
     adzuna_countries: list[str] = Field(default_factory=lambda: ["fr"])
     min_match_percentage: int = Field(default=40, ge=0, le=100)
+    excluded_title_keywords: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
+    )
     auto_import: bool = True
     auto_prepare_dossier: bool = True
     interval_seconds: int = Field(default=3600, ge=300, le=86400)
@@ -65,6 +92,7 @@ class WatcherCycleResult:
     dossiers_prepared: int = 0
     duplicates_skipped: int = 0
     low_match_skipped: int = 0
+    excluded_skipped: int = 0
     imported_offer_titles: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -174,8 +202,12 @@ def run_watcher_cycle(
                 source=listing.source_name,
                 description=listing.description or "Sans description fournie.",
             )
-            match_res = compare_offer_to_profile(temp_offer, profile)
-            score = match_res.match_percentage or 0
+            if find_excluded_keyword(temp_offer.title, cfg.excluded_title_keywords):
+                result.excluded_skipped += 1
+                continue
+
+            # Même score global que l'interface (compétences, intitulé, contrat, lieu).
+            score = assess_offer_fit(temp_offer, profile).overall_percentage or 0
 
             if score < cfg.min_match_percentage:
                 result.low_match_skipped += 1
@@ -183,11 +215,13 @@ def run_watcher_cycle(
 
             if cfg.auto_import:
                 try:
-                    notes_intro = f"[Veille auto - Score de pertinence : {score}%]"
+                    # Le score n'est pas écrit dans le texte : il fausserait le calcul
+                    # ultérieur de correspondance et deviendrait obsolète.
+                    full_desc = temp_offer.description
                     if listing.public_contact_email:
-                        notes_intro += f" Contact public : {listing.public_contact_email}"
-
-                    full_desc = f"{notes_intro}\n\n{temp_offer.description}"
+                        full_desc = (
+                            f"Contact public : {listing.public_contact_email}\n\n{full_desc}"
+                        )
                     offer_to_save = JobOfferData(
                         title=temp_offer.title,
                         company=temp_offer.company,

@@ -14,7 +14,7 @@ from src.models import (
     TailoredResume,
 )
 from src.services.cover_letters import build_cover_letter, save_cover_letter
-from src.services.matching import compare_offer_to_profile
+from src.services.matching import assess_offer_fit
 from src.services.resume_import import list_resume_versions
 from src.services.tailored_resumes import (
     TailoredResumeError,
@@ -120,8 +120,7 @@ def prepare_pending_dossiers(
             description=offer.description,
             status=offer.status,  # type: ignore[arg-type]
         )
-        match_res = compare_offer_to_profile(offer_data, profile)
-        score = match_res.match_percentage or 0
+        score = assess_offer_fit(offer_data, profile).overall_percentage or 0
 
         if score < min_score:
             continue
