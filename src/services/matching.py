@@ -329,7 +329,7 @@ def assess_offer_fit(offer: JobOfferData, profile: ProfileData) -> OfferFitAsses
             weighted_components.append((100, 10))
             evaluated_criteria.append("lieu")
             location_reason = "dans la zone renseignée"
-        elif profile.remote_only_outside_local_area and _is_remote_offer(offer):
+        elif profile.remote_only_outside_local_area and is_remote_offer(offer):
             weighted_components.append((100, 10))
             evaluated_criteria.append("télétravail")
             location_compatible = True
@@ -452,7 +452,7 @@ def _meaningful_terms(value: str) -> set[str]:
     }
 
 
-def _is_remote_offer(offer: JobOfferData) -> bool:
+def is_remote_offer(offer: JobOfferData) -> bool:
     return bool(
         re.search(
             r"\b(?:fully remote|full[- ]remote|100\s*%\s*(?:en\s*)?remote|"

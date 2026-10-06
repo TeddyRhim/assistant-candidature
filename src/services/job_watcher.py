@@ -22,6 +22,7 @@ from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import DuplicateOfferURL, create_offer
 from src.services.job_sources.adzuna import (
     LOCAL_SEARCH_LOCATIONS,
+    is_french_or_english,
     search_adzuna_throttled,
 )
 from src.services.job_sources.base import JobSourceError, SourceListing
@@ -36,6 +37,7 @@ from src.services.matching import assess_offer_fit
 logger = logging.getLogger(__name__)
 
 PlatformType = Literal["greenhouse", "lever"]
+MIN_LANGUAGE_CHECK_CHARACTERS = 120
 FRANCE_TRAVAIL_WATCH_DAYS = 14  # fenêtre de publication interrogée à chaque cycle
 
 # Mots (entiers) du titre qui écartent une annonce : hors cible pour un CDI backend PHP.
@@ -287,6 +289,15 @@ def run_watcher_cycle(
                 description=listing.description or "Sans description fournie.",
             )
             if find_excluded_keyword(temp_offer.title, cfg.excluded_title_keywords):
+                result.excluded_skipped += 1
+                continue
+
+            # Annonces ni en français ni en anglais (néerlandais, roumain…) : écartées. Sous
+            # MIN_LANGUAGE_CHECK_CHARACTERS, la détection n'est pas fiable : on garde l'annonce.
+            description_text = f"{listing.title}. {listing.description or ''}"
+            if len(description_text) >= MIN_LANGUAGE_CHECK_CHARACTERS and (
+                not is_french_or_english(listing)
+            ):
                 result.excluded_skipped += 1
                 continue
 

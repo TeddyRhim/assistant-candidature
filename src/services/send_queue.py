@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -22,13 +24,23 @@ from src.services.applications import ApplicationNotFound
 from src.services.companies import CompanyNotFound
 from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import OfferNotFound
-from src.services.matching import assess_offer_fit
+from src.services.matching import assess_offer_fit, is_remote_offer
 from src.services.tailored_resumes import get_tailored_resume
 
 FOLLOW_UP_DAYS = 7
 QUEUE_OFFER_STATUSES = ("À examiner", "Intéressante")
 UNKNOWN_COMPANY_NAME = "Entreprise non précisée"
 UNKNOWN_LOCATION = "Lieu non précisé"
+
+# Sud de la France : Provence-Alpes-Côte d'Azur et principales villes d'Occitanie.
+SOUTH_FRANCE_PATTERN = re.compile(
+    r"\b(?:alpes[\s-]+maritimes|nice|cannes|antibes|juan[\s-]+les[\s-]+pins|mougins|grasse|"
+    r"menton|valbonne|biot|sophia[\s-]+antipolis|cagnes|vence|mandelieu|"
+    r"saint[\s-]+laurent[\s-]+du[\s-]+var|var|toulon|hyeres|frejus|saint[\s-]+raphael|"
+    r"draguignan|la[\s-]+seyne|bouches[\s-]+du[\s-]+rhone|marseille|aix[\s-]+en[\s-]+provence|"
+    r"avignon|vaucluse|provence|cote[\s-]+d[\s-]+azur|paca|montpellier|nimes|toulouse|"
+    r"perpignan|herault|occitanie)\b|\((?:06|83|13)\)"
+)
 
 
 # Adzuna coupe ses extraits à 500 caractères : une description de cette longueur est suspecte.
@@ -108,6 +120,7 @@ class QueueItem:
     score: int
     has_resume: bool
     has_letter: bool
+    priority: str | None = None  # « Sud » ou « Full remote » : remonte en tête de file
 
     @property
     def is_ready(self) -> bool:
@@ -127,10 +140,31 @@ def offer_to_data(offer: JobOffer) -> JobOfferData:
     )
 
 
+def _normalize_place(value: str) -> str:
+    text = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(char for char in text if not unicodedata.combining(char))
+
+
+def offer_priority(offer: JobOffer, profile: ProfileData) -> str | None:
+    """« Sud » (sud de la France ou zone du profil), sinon « Full remote », sinon rien."""
+    location = _normalize_place(offer.location or "")
+    if location and (
+        SOUTH_FRANCE_PATTERN.search(location)
+        or any(
+            _normalize_place(zone) in location for zone in profile.local_locations if zone.strip()
+        )
+    ):
+        return "Sud"
+    if is_remote_offer(offer_to_data(offer)):
+        return "Full remote"
+    return None
+
+
 def build_send_queue(engine: Engine, profile: ProfileData, min_score: int = 0) -> list[QueueItem]:
     """Offres à traiter : sans candidature suivie, non écartées, classées par pertinence.
 
-    Les offres marquées « Intéressante » passent devant, puis le score global décroissant.
+    Les offres marquées « Intéressante » passent devant, puis celles du sud de la France ou en
+    full remote, puis le score global décroissant.
     Une offre sous le seuil reste visible si elle a été marquée « Intéressante ».
     """
     with Session(engine) as session:
@@ -164,9 +198,17 @@ def build_send_queue(engine: Engine, profile: ProfileData, min_score: int = 0) -
                 score=score,
                 has_resume=offer.id in resume_offer_ids,
                 has_letter=offer.id in letter_offer_ids,
+                priority=offer_priority(offer, profile),
             )
         )
-    items.sort(key=lambda item: (item.offer.status == "Intéressante", item.score), reverse=True)
+    items.sort(
+        key=lambda item: (
+            item.offer.status == "Intéressante",
+            item.priority is not None,
+            item.score,
+        ),
+        reverse=True,
+    )
     return items
 
 

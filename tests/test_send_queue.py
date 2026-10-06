@@ -393,3 +393,47 @@ def test_clamp_prep_seconds_bounds_forgotten_windows() -> None:
     assert clamp_prep_seconds(-5) == 0
     assert clamp_prep_seconds(95.7) == 95
     assert clamp_prep_seconds(10 * 3600) == 3600
+
+
+def test_queue_puts_south_and_full_remote_offers_before_better_scored_ones(engine: Engine) -> None:
+    desc = "PHP et Symfony requis."
+    paris = create_offer(
+        engine, _offer("Développeur PHP Symfony", desc, company="A", location="Paris")
+    )
+    south = create_offer(
+        engine, _offer("Développeur PHP", desc, company="B", location="Cannes, Alpes-Maritimes")
+    )
+    remote = create_offer(
+        engine,
+        _offer(
+            "Développeur Symfony",
+            "Symfony. Poste en full remote.",
+            company="C",
+            location="Lyon",
+        ),
+    )
+    paris13 = create_offer(
+        engine, _offer("Développeur PHP backend", desc, company="D", location="Paris 13")
+    )
+
+    queue = build_send_queue(engine, _profile())
+    by_id = {item.offer.id: item for item in queue}
+
+    assert by_id[south.id].priority == "Sud"
+    assert by_id[remote.id].priority == "Full remote"
+    assert by_id[paris.id].priority is None
+    assert by_id[paris13.id].priority is None  # « 13 » nu n'est pas le département
+    assert {queue[0].offer.id, queue[1].offer.id} == {south.id, remote.id}
+    assert queue[0].score >= 0 and all(item.priority is None for item in queue[2:])
+
+
+def test_starred_offer_still_comes_before_south_offers(engine: Engine) -> None:
+    south = create_offer(engine, _offer("Développeur PHP", "PHP.", location="Nice"))
+    starred = create_offer(
+        engine, _offer("Développeur Symfony", "Symfony.", location="Lille", company="Z")
+    )
+    set_offer_status(engine, starred.id, "Intéressante")
+
+    queue = build_send_queue(engine, _profile())
+
+    assert [item.offer.id for item in queue][:2] == [starred.id, south.id]
