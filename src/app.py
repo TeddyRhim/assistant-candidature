@@ -166,8 +166,10 @@ from src.services.send_queue import (
     SpontaneousItem,
     build_send_queue,
     build_spontaneous_queue,
+    complete_offer_description,
     contact_search_links,
     due_follow_ups,
+    is_probably_truncated,
     mark_followed_up,
     mark_offer_sent,
     mark_spontaneous_sent,
@@ -3421,6 +3423,43 @@ def _show_follow_ups(engine: Engine) -> None:
     st.markdown("---")
 
 
+def _show_complete_description_form(engine: Engine, profile: ProfileData, offer) -> None:
+    st.caption(
+        "Ouvre l'annonce d'origine, copie son texte complet et colle-le ici. Le score est "
+        "recalculé avec les technologies réellement demandées."
+    )
+    pasted = st.text_area(
+        "Texte complet de l'annonce",
+        height=220,
+        key=f"queue_full_text_{offer.id}",
+        placeholder="Colle ici le texte complet de l'annonce…",
+    )
+    regenerate = st.checkbox(
+        "Régénérer le CV ciblé et la lettre avec ce texte",
+        value=True,
+        key=f"queue_full_regen_{offer.id}",
+        help="Écrase le CV ciblé et la lettre déjà enregistrés pour cette offre, y compris "
+        "tes modifications. Décoche pour ne changer que le texte et le score.",
+    )
+    if st.button("Enregistrer le texte complet", key=f"queue_full_save_{offer.id}"):
+        try:
+            update = complete_offer_description(
+                engine, offer.id, pasted, profile, regenerate=regenerate
+            )
+        except (ValueError, OfferNotFound) as error:
+            st.error(str(error))
+            return
+        message = f"Texte enregistré : score {update.score_before} % → {update.score_after} %."
+        if update.dossier_regenerated:
+            message += " CV ciblé et lettre régénérés."
+        if update.dossier_error:
+            message += f" Dossier non régénéré : {update.dossier_error}"
+        for key in (f"queue_docs_{offer.id}", f"queue_full_text_{offer.id}"):
+            st.session_state.pop(key, None)
+        st.session_state["queue_flash"] = message
+        st.rerun()
+
+
 def _show_queue_card(engine: Engine, profile: ProfileData, item: QueueItem) -> None:
     offer = item.offer
     docs_key = f"queue_docs_{offer.id}"
@@ -3439,10 +3478,19 @@ def _show_queue_card(engine: Engine, profile: ProfileData, item: QueueItem) -> N
             f"{'✅' if item.has_resume else '⚠️'} CV ciblé · "
             f"{'✅' if item.has_letter else '⚠️'} Lettre"
         )
-        if offer.source.startswith("Adzuna") and len(offer.description) >= 480:
+        truncated = is_probably_truncated(offer)
+        if truncated:
             st.caption(
-                "Texte d'annonce tronqué par Adzuna : lis l'annonce d'origine avant d'envoyer."
+                "Texte d'annonce tronqué par Adzuna : colle le texte complet ci-dessous pour "
+                "un score et un dossier fidèles à l'annonce."
             )
+        expander_label = (
+            "Compléter l'annonce (texte tronqué)"
+            if truncated
+            else "Remplacer le texte de l'annonce"
+        )
+        with st.expander(expander_label):
+            _show_complete_description_form(engine, profile, offer)
 
         actions = st.columns(4)
         if offer.url:

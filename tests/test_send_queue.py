@@ -12,26 +12,31 @@ from src.models import (
     Application,
     Company,
     CompanyData,
+    JobOffer,
     JobOfferData,
     ProfileData,
+    ResumeVersion,
     SkillRating,
 )
 from src.services.applications import ApplicationNotFound, list_applications
 from src.services.companies import CompanyNotFound, create_company
-from src.services.cover_letters import save_cover_letter
+from src.services.cover_letters import get_cover_letter, save_cover_letter
 from src.services.job_offers import OfferNotFound, create_offer, list_offers
 from src.services.send_queue import (
     OfferAlreadySent,
     SpontaneousAlreadySent,
     build_send_queue,
     build_spontaneous_queue,
+    complete_offer_description,
     contact_search_links,
     due_follow_ups,
+    is_probably_truncated,
     mark_followed_up,
     mark_offer_sent,
     mark_spontaneous_sent,
     set_offer_status,
 )
+from src.services.tailored_resumes import get_tailored_resume
 
 
 @pytest.fixture
@@ -249,6 +254,113 @@ def test_contact_search_links_are_plain_links_with_encoded_company_name(engine: 
         "https://www.google.com/search?q=Soci%C3%A9t%C3%A9+%26+Fils+Aix-en-Provence+contact+recrutement"
     )
     assert links["Chercher sur LinkedIn"].endswith("keywords=Soci%C3%A9t%C3%A9+%26+Fils")
+
+
+def _add_reference_resume(engine: Engine) -> None:
+    with Session(engine) as session, session.begin():
+        session.add(
+            ResumeVersion(
+                id="a" * 32,
+                original_filename="cv.pdf",
+                stored_filename="cv-stored.pdf",
+                reviewed_text="Développeur PHP Symfony.",
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+        )
+
+
+def _truncated_offer(engine: Engine) -> JobOffer:
+    excerpt = ("Développeur backend. " + "Missions variées au sein de l'équipe. " * 20)[:500]
+    return create_offer(
+        engine,
+        _offer("Développeur backend", excerpt, source="Adzuna (FR)"),
+    )
+
+
+FULL_TEXT = (
+    "Développeur backend PHP Symfony. PHP et Symfony sont requis, avec SQL et Docker. "
+    "Vous concevez des API REST pour notre plateforme. " * 6
+)
+
+
+def test_truncated_detection_targets_adzuna_excerpts_only(engine: Engine) -> None:
+    truncated = _truncated_offer(engine)
+    full = create_offer(
+        engine,
+        _offer("Développeur PHP", "PHP. " * 200, source="Adzuna (FR)", url="https://e.com/2"),
+    )
+    short = create_offer(
+        engine,
+        _offer("Développeur Symfony", "Symfony.", source="Adzuna (FR)", url="https://e.com/3"),
+    )
+    other_source = create_offer(
+        engine,
+        _offer("Développeur Go", "x" * 500, source="Greenhouse", url="https://e.com/4"),
+    )
+
+    assert len(truncated.description) == 500
+    assert is_probably_truncated(truncated) is True
+    assert is_probably_truncated(full) is False
+    assert is_probably_truncated(short) is False
+    assert is_probably_truncated(other_source) is False
+
+
+def test_complete_description_updates_offer_score_and_regenerates_dossier(
+    engine: Engine,
+) -> None:
+    _add_reference_resume(engine)
+    offer = _truncated_offer(engine)
+
+    update = complete_offer_description(engine, offer.id, f"  {FULL_TEXT}  ", _profile())
+
+    assert update.score_after > update.score_before
+    assert update.dossier_regenerated is True
+    assert update.dossier_error is None
+    [stored] = list_offers(engine)
+    assert stored.description == FULL_TEXT.strip()
+    assert is_probably_truncated(stored) is False
+    assert get_tailored_resume(engine, offer.id) is not None
+    assert get_cover_letter(engine, job_offer_id=offer.id) is not None
+
+
+def test_complete_description_can_skip_regeneration_to_keep_manual_edits(
+    engine: Engine,
+) -> None:
+    _add_reference_resume(engine)
+    offer = _truncated_offer(engine)
+    save_cover_letter(engine, "Ma lettre retravaillée à la main.", job_offer_id=offer.id)
+
+    update = complete_offer_description(engine, offer.id, FULL_TEXT, _profile(), regenerate=False)
+
+    assert update.dossier_regenerated is False
+    assert get_cover_letter(engine, job_offer_id=offer.id).content == (
+        "Ma lettre retravaillée à la main."
+    )
+    assert get_tailored_resume(engine, offer.id) is None
+
+
+def test_complete_description_reports_missing_reference_resume(engine: Engine) -> None:
+    offer = _truncated_offer(engine)
+
+    update = complete_offer_description(engine, offer.id, FULL_TEXT, _profile())
+
+    assert update.dossier_regenerated is False
+    assert "Aucun CV de référence" in (update.dossier_error or "")
+    assert list_offers(engine)[0].description == FULL_TEXT.strip()
+
+
+def test_complete_description_rejects_useless_text_and_unknown_offer(engine: Engine) -> None:
+    offer = _truncated_offer(engine)
+
+    with pytest.raises(ValueError, match="texte complet"):
+        complete_offer_description(engine, offer.id, "   ", _profile())
+    with pytest.raises(ValueError, match="pas plus complet"):
+        complete_offer_description(engine, offer.id, "Trop court.", _profile())
+    with pytest.raises(ValueError, match="taille maximale"):
+        complete_offer_description(engine, offer.id, "x" * 100_001, _profile())
+    with pytest.raises(OfferNotFound):
+        complete_offer_description(engine, "0" * 32, FULL_TEXT, _profile())
+    assert len(list_offers(engine)[0].description) == 500
 
 
 def test_follow_ups_ignore_applications_that_are_not_pending(engine: Engine) -> None:

@@ -102,6 +102,12 @@ fiche, une fiche minimale est créée à partir de l'annonce (sans contact). Les
 marquées « Intéressante » ou écartées. Les relances échues apparaissent en tête de page. Rien
 n'est envoyé automatiquement.
 
+Les extraits Adzuna sont coupés à 500 caractères : la carte l'indique, et le volet
+**Compléter l'annonce** permet de coller le texte complet copié depuis l'annonce d'origine. Le
+score est recalculé avec les technologies réellement demandées et, si la case est cochée, le CV
+ciblé et la lettre sont régénérés (ce qui écrase leurs modifications manuelles). Le texte collé doit
+être plus complet que l'extrait enregistré.
+
 L'onglet **Candidatures spontanées** de la même page reprend ce parcours pour les entreprises de
 **Entreprises à prospecter** (par exemple issues de La Bonne Boîte) qui n'ont encore aucune
 candidature : prépare la lettre (modifiable), télécharge le CV de base et la lettre en PDF, trouve

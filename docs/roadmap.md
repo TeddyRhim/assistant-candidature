@@ -69,6 +69,7 @@
 - [x] Veille planifiée des recherches (`services/job_watcher.py`) et pré-génération des dossiers (`services/dossier_generator.py`). Elle vit dans le processus Streamlit ; une gestion durable (service indépendant) reste optionnelle.
 - [x] Connecteur France Travail (`services/job_sources/france_travail.py`) : recherche manuelle, import en lot et intégration à la veille. À valider avec de vrais identifiants.
 - [x] La Bonne Boîte (`services/job_sources/bonne_boite.py`) : entreprises classées par potentiel d'embauche pour les candidatures spontanées, validé avec de vrais identifiants.
+- [x] Compléter une annonce tronquée dans la file d'envoi : texte complet collé, score recalculé, CV et lettre régénérés.
 - [x] Score par technologies demandées (au lieu de la couverture des 5 meilleures compétences) et recherche par langages acceptés (niveau 5 ou plus) ; seuil par défaut de la veille à 50 %.
 - [x] File d'envoi des candidatures spontanées : lettre, PDF, liens de recherche du contact, suivi et relance à J+7 pour les entreprises à prospecter.
 - [ ] Obtenir l'abonnement à l'API « Offres d'emploi » de France Travail pour valider la recherche d'offres.

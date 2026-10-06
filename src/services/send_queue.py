@@ -20,8 +20,10 @@ from src.models import (
 )
 from src.services.applications import ApplicationNotFound
 from src.services.companies import CompanyNotFound
+from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import OfferNotFound
 from src.services.matching import assess_offer_fit
+from src.services.tailored_resumes import get_tailored_resume
 
 FOLLOW_UP_DAYS = 7
 QUEUE_OFFER_STATUSES = ("À examiner", "Intéressante")
@@ -29,8 +31,75 @@ UNKNOWN_COMPANY_NAME = "Entreprise non précisée"
 UNKNOWN_LOCATION = "Lieu non précisé"
 
 
+# Adzuna coupe ses extraits à 500 caractères : une description de cette longueur est suspecte.
+TRUNCATED_DESCRIPTION_LENGTHS = range(480, 521)
+MAX_DESCRIPTION_CHARACTERS = 100_000
+
+
 class OfferAlreadySent(ValueError):
     """The offer already has a tracked application."""
+
+
+def is_probably_truncated(offer: JobOffer) -> bool:
+    """Vrai pour un extrait Adzuna coupé : le texte complet reste à coller depuis l'annonce."""
+    return (
+        offer.source.startswith("Adzuna")
+        and len(offer.description.strip()) in TRUNCATED_DESCRIPTION_LENGTHS
+    )
+
+
+@dataclass(frozen=True)
+class DescriptionUpdate:
+    score_before: int
+    score_after: int
+    dossier_regenerated: bool
+    dossier_error: str | None = None
+
+
+def complete_offer_description(
+    engine: Engine,
+    offer_id: str,
+    text: str,
+    profile: ProfileData,
+    *,
+    regenerate: bool = True,
+) -> DescriptionUpdate:
+    """Remplace l'extrait d'une offre par le texte complet collé, et refait le dossier.
+
+    La régénération écrase le CV ciblé et la lettre déjà enregistrés pour cette offre.
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        raise ValueError("Colle le texte complet de l'annonce.")
+    if len(cleaned) > MAX_DESCRIPTION_CHARACTERS:
+        raise ValueError("Le texte collé dépasse la taille maximale autorisée.")
+    with Session(engine, expire_on_commit=False) as session, session.begin():
+        offer = session.get(JobOffer, offer_id)
+        if offer is None:
+            raise OfferNotFound("Cette offre n'existe plus.")
+        if len(cleaned) <= len(offer.description.strip()):
+            raise ValueError(
+                "Le texte collé n'est pas plus complet que celui déjà enregistré."
+            )
+        score_before = assess_offer_fit(offer_to_data(offer), profile).overall_percentage or 0
+        offer.description = cleaned
+        updated_data = offer_to_data(offer)
+    score_after = assess_offer_fit(updated_data, profile).overall_percentage or 0
+
+    regenerated = False
+    dossier_error = None
+    if regenerate:
+        existing = get_tailored_resume(engine, offer_id)
+        result = prepare_dossier_for_offer(
+            engine,
+            offer_id,
+            updated_data,
+            profile,
+            source_resume_id=existing.source_resume_id if existing else None,
+        )
+        regenerated = bool(result.tailored_resume_id or result.cover_letter_id)
+        dossier_error = result.error
+    return DescriptionUpdate(score_before, score_after, regenerated, dossier_error)
 
 
 @dataclass(frozen=True)
