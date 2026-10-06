@@ -102,6 +102,13 @@ fiche, une fiche minimale est créée à partir de l'annonce (sans contact). Les
 marquées « Intéressante » ou écartées. Les relances échues apparaissent en tête de page. Rien
 n'est envoyé automatiquement.
 
+L'onglet **Candidatures spontanées** de la même page reprend ce parcours pour les entreprises de
+**Entreprises à prospecter** (par exemple issues de La Bonne Boîte) qui n'ont encore aucune
+candidature : prépare la lettre (modifiable), télécharge le CV de base et la lettre en PDF, trouve
+le contact via les liens de recherche proposés (site de l'entreprise, LinkedIn), envoie toi-même,
+puis clique sur **J'ai envoyé ma candidature** : une candidature spontanée « Envoyée » est créée
+avec une relance à 7 jours, et l'entreprise quitte la file. Aucun contact n'est deviné ni collecté.
+
 Les annonces importées restent modifiables, supprimables et utilisables pour générer un CV et une lettre adaptés. Aucune offre n'est enregistrée sans action explicite de l'utilisateur.
 
 Dans **CV par offre → Batch de CV**, les offres enregistrées sont affichées en cartes sur quatre

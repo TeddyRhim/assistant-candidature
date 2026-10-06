@@ -25,6 +25,7 @@ from src.db import (
 from src.models import (
     ApplicationData,
     ApplicationStatus,
+    Company,
     CompanyCandidate,
     CompanyCandidateData,
     CompanyData,
@@ -160,10 +161,14 @@ from src.services.send_queue import (
     FOLLOW_UP_DAYS,
     OfferAlreadySent,
     QueueItem,
+    SpontaneousItem,
     build_send_queue,
+    build_spontaneous_queue,
+    contact_search_links,
     due_follow_ups,
     mark_followed_up,
     mark_offer_sent,
+    mark_spontaneous_sent,
     offer_to_data,
     set_offer_status,
 )
@@ -3481,9 +3486,9 @@ def _show_queue_card(engine: Engine, profile: ProfileData, item: QueueItem) -> N
 def show_send_queue_page(engine: Engine, profile: ProfileData) -> None:
     st.title("File d'envoi")
     st.write(
-        "Les offres les plus pertinentes avec leur CV et leur lettre prêts. L'envoi reste "
-        "manuel : ouvre l'annonce, relis les documents, postule sur le site de l'employeur, "
-        "puis enregistre l'envoi pour déclencher le suivi et la relance."
+        "Les offres les plus pertinentes et les entreprises à contacter, avec leur CV et leur "
+        "lettre prêts. L'envoi reste manuel : relis les documents, candidate sur le site ou "
+        "par e-mail, puis enregistre l'envoi pour déclencher le suivi et la relance."
     )
     flash = st.session_state.pop("queue_flash", None)
     if flash:
@@ -3491,6 +3496,14 @@ def show_send_queue_page(engine: Engine, profile: ProfileData) -> None:
 
     _show_follow_ups(engine)
 
+    offers_tab, spontaneous_tab = st.tabs(["Offres", "Candidatures spontanées"])
+    with offers_tab:
+        _show_offers_queue(engine, profile)
+    with spontaneous_tab:
+        _show_spontaneous_queue(engine, profile)
+
+
+def _show_offers_queue(engine: Engine, profile: ProfileData) -> None:
     controls = st.columns(2)
     min_score = controls[0].slider(
         "Score minimal",
@@ -3523,6 +3536,156 @@ def show_send_queue_page(engine: Engine, profile: ProfileData) -> None:
         _show_queue_card(engine, profile, item)
     if len(queue) > limit:
         st.caption(f"{len(queue) - limit} autre(s) offre(s) non affichée(s).")
+
+
+def _build_spontaneous_documents(company: Company, letter_content: str) -> dict[str, object]:
+    """Génère à la demande le CV de base et la lettre spontanée en PDF."""
+    documents: dict[str, object] = {"cv": None, "letter": None, "errors": []}
+    errors: list[str] = documents["errors"]  # type: ignore[assignment]
+    base_cv = load_base_cv_data()
+    cv_name = tailored_cv_filename(base_cv, target_company=company.name)
+    try:
+        documents["cv"] = (render_cv_pdf(base_cv), cv_name)
+    except (OSError, ValueError, KeyError) as error:
+        errors.append(f"CV : {error}")
+    try:
+        documents["letter"] = (
+            render_cover_letter_pdf(letter_content),
+            cv_name.replace("-cv-", "-lettre-", 1),
+        )
+    except CoverLetterError as error:
+        errors.append(f"Lettre : {error}")
+    return documents
+
+
+def _show_spontaneous_card(engine: Engine, profile: ProfileData, item: SpontaneousItem) -> None:
+    company = item.company
+    docs_key = f"queue_spontaneous_docs_{company.id}"
+    letter = get_cover_letter(engine, company_id=company.id)
+    with st.container(border=True):
+        st.markdown(f"**{company.name}** — {company.location}")
+        st.caption(company.development_evidence[:260])
+        if company.public_contact_email:
+            st.write(f"**Contact public :** {company.public_contact_email}")
+        else:
+            st.caption(
+                "Aucun contact enregistré : trouve l'adresse ou le formulaire de candidature "
+                "sur le site de l'entreprise."
+            )
+        links = st.columns(3)
+        for column, (label, url) in zip(links, contact_search_links(company), strict=False):
+            column.link_button(label, url)
+        if company.source_url.startswith(("http://", "https://")):
+            links[2].link_button("Fiche officielle", company.source_url)
+
+        if letter is None:
+            if st.button("1. Préparer la lettre", key=f"spont_prepare_{company.id}"):
+                try:
+                    save_cover_letter(
+                        engine,
+                        build_cover_letter(None, profile, company.name),
+                        company_id=company.id,
+                        target_company=company.name,
+                    )
+                except CoverLetterError as error:
+                    st.error(str(error))
+                else:
+                    st.session_state["queue_flash"] = "Lettre préparée : relis-la avant l'envoi."
+                    st.rerun()
+        else:
+            with st.expander("Relire et modifier la lettre"):
+                edited = st.text_area(
+                    "Lettre",
+                    value=letter.content,
+                    height=320,
+                    key=f"spont_letter_{company.id}",
+                    label_visibility="collapsed",
+                )
+                if st.button("Enregistrer la lettre", key=f"spont_save_letter_{company.id}"):
+                    try:
+                        save_cover_letter(
+                            engine, edited, company_id=company.id, target_company=company.name
+                        )
+                    except CoverLetterError as error:
+                        st.error(str(error))
+                    else:
+                        st.session_state.pop(docs_key, None)
+                        st.session_state["queue_flash"] = "Lettre enregistrée."
+                        st.rerun()
+            if st.button("2. Préparer les PDF", key=f"spont_pdf_{company.id}"):
+                st.session_state[docs_key] = _build_spontaneous_documents(
+                    company, letter.content
+                )
+
+        documents = st.session_state.get(docs_key)
+        if documents:
+            downloads = st.columns(2)
+            for column, key, label in (
+                (downloads[0], "cv", "Télécharger le CV (PDF)"),
+                (downloads[1], "letter", "Télécharger la lettre (PDF)"),
+            ):
+                if documents[key]:
+                    data, file_name = documents[key]
+                    column.download_button(
+                        label,
+                        data=data,
+                        file_name=file_name,
+                        mime="application/pdf",
+                        key=f"spont_download_{key}_{company.id}",
+                    )
+            for message in documents["errors"]:
+                st.warning(message)
+
+        st.caption(
+            "Envoie ta candidature toi-même (e-mail, formulaire du site, LinkedIn), puis "
+            "enregistre l'envoi. Pour un e-mail depuis l'application, utilise « Envoyer un "
+            "e-mail » (contact public sourcé requis)."
+        )
+        role = st.text_input(
+            "Poste visé",
+            value=profile.target_role or "Développeur",
+            key=f"spont_role_{company.id}",
+        )
+        if st.button(
+            "3. ✅ J'ai envoyé ma candidature",
+            key=f"spont_sent_{company.id}",
+            type="primary",
+            help=f"Crée la candidature « Envoyée » avec une relance dans {FOLLOW_UP_DAYS} jours.",
+        ):
+            try:
+                mark_spontaneous_sent(engine, company.id, role=role)
+            except (ValueError, CompanyNotFound) as error:
+                st.error(str(error))
+            else:
+                st.session_state.pop(docs_key, None)
+                st.session_state["queue_flash"] = (
+                    f"Envoi enregistré pour {company.name}. Relance prévue dans "
+                    f"{FOLLOW_UP_DAYS} jours."
+                )
+                st.rerun()
+
+
+def _show_spontaneous_queue(engine: Engine, profile: ProfileData) -> None:
+    st.write(
+        "Les entreprises à prospecter (par exemple issues de La Bonne Boîte) qui n'ont pas "
+        "encore reçu de candidature. Prépare la lettre, trouve le contact, envoie toi-même "
+        "puis enregistre l'envoi pour déclencher la relance."
+    )
+    queue = build_spontaneous_queue(engine)
+    metrics = st.columns(2)
+    metrics[0].metric("Entreprises à contacter", len(queue))
+    metrics[1].metric("Lettres prêtes", sum(item.has_letter for item in queue))
+    if not queue:
+        st.info(
+            "Aucune entreprise à contacter. Ajoute des pistes depuis « Recherche → Découvrir "
+            "des entreprises » (onglet La Bonne Boîte)."
+        )
+        return
+    limit = st.selectbox("Entreprises affichées", options=[10, 20, 50], index=0)
+    for item in queue[:limit]:
+        _show_spontaneous_card(engine, profile, item)
+    if len(queue) > limit:
+        st.caption(f"{len(queue) - limit} autre(s) entreprise(s) non affichée(s).")
 
 
 engine = get_engine()

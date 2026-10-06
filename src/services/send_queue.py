@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from urllib.parse import quote_plus
 
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from src.models import (
     TailoredResume,
 )
 from src.services.applications import ApplicationNotFound
+from src.services.companies import CompanyNotFound
 from src.services.job_offers import OfferNotFound
 from src.services.matching import assess_offer_fit
 
@@ -173,6 +175,92 @@ def mark_offer_sent(
         session.add(application)
         offer.status = "Candidature liée"
         offer.company_id = company.id
+    return application
+
+
+@dataclass(frozen=True)
+class SpontaneousItem:
+    company: Company
+    has_letter: bool
+
+
+class SpontaneousAlreadySent(ValueError):
+    """The company already has a tracked spontaneous application."""
+
+
+def build_spontaneous_queue(engine: Engine) -> list[SpontaneousItem]:
+    """Entreprises à prospecter sans aucune candidature suivie, les plus récentes d'abord.
+
+    Une entreprise déjà visée par une candidature (offre ou spontanée) n'est pas reproposée.
+    """
+    with Session(engine) as session:
+        contacted_ids = set(session.scalars(select(Application.company_id)))
+        letter_company_ids = set(
+            session.scalars(
+                select(CoverLetter.company_id)
+                .where(CoverLetter.company_id.is_not(None))
+                .where(CoverLetter.job_offer_id.is_(None))
+            )
+        )
+        companies = list(session.scalars(select(Company).order_by(Company.created_at.desc())))
+    return [
+        SpontaneousItem(company=company, has_letter=company.id in letter_company_ids)
+        for company in companies
+        if company.id not in contacted_ids
+    ]
+
+
+def contact_search_links(company: Company) -> list[tuple[str, str]]:
+    """Liens de recherche à ouvrir soi-même pour trouver un contact (rien n'est collecté)."""
+    name = company.name.strip()
+    place = "" if company.location == UNKNOWN_LOCATION else company.location.strip()
+    web_query = quote_plus(f"{name} {place} contact recrutement".strip())
+    return [
+        ("Chercher le site et le contact", f"https://www.google.com/search?q={web_query}"),
+        (
+            "Chercher sur LinkedIn",
+            f"https://www.linkedin.com/search/results/companies/?keywords={quote_plus(name)}",
+        ),
+    ]
+
+
+def mark_spontaneous_sent(
+    engine: Engine,
+    company_id: str,
+    *,
+    role: str,
+    sent_on: date | None = None,
+    follow_up_days: int = FOLLOW_UP_DAYS,
+) -> Application:
+    """Enregistre une candidature spontanée envoyée (sans offre) et planifie la relance."""
+    sent = sent_on or date.today()
+    cleaned_role = role.strip()
+    if not cleaned_role:
+        raise ValueError("Indique le poste visé pour suivre la candidature spontanée.")
+    with Session(engine, expire_on_commit=False) as session, session.begin():
+        if session.get(Company, company_id) is None:
+            raise CompanyNotFound("Cette entreprise n'existe plus.")
+        if session.scalar(
+            select(Application.id).where(
+                Application.company_id == company_id, Application.job_offer_id.is_(None)
+            )
+        ):
+            raise SpontaneousAlreadySent(
+                "Une candidature spontanée est déjà suivie pour cette entreprise."
+            )
+        application = Application(
+            id=uuid.uuid4().hex,
+            company_id=company_id,
+            job_offer_id=None,
+            role=cleaned_role[:250],
+            status="Envoyée",
+            applied_on=sent.isoformat(),
+            next_action="Relancer si aucune réponse",
+            next_action_on=(sent + timedelta(days=follow_up_days)).isoformat(),
+            notes="Candidature spontanée.",
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        session.add(application)
     return application
 
 

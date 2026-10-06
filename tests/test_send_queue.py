@@ -17,15 +17,19 @@ from src.models import (
     SkillRating,
 )
 from src.services.applications import ApplicationNotFound, list_applications
-from src.services.companies import create_company
+from src.services.companies import CompanyNotFound, create_company
 from src.services.cover_letters import save_cover_letter
 from src.services.job_offers import OfferNotFound, create_offer, list_offers
 from src.services.send_queue import (
     OfferAlreadySent,
+    SpontaneousAlreadySent,
     build_send_queue,
+    build_spontaneous_queue,
+    contact_search_links,
     due_follow_ups,
     mark_followed_up,
     mark_offer_sent,
+    mark_spontaneous_sent,
     set_offer_status,
 )
 
@@ -175,6 +179,76 @@ def test_due_follow_ups_and_postponement(engine: Engine) -> None:
     assert due_follow_ups(engine, today=date(2026, 10, 8)) == []
     with pytest.raises(ApplicationNotFound):
         mark_followed_up(engine, "0" * 32)
+
+
+def _prospect(engine: Engine, name: str, location: str = "Valbonne") -> Company:
+    return create_company(
+        engine,
+        CompanyData(
+            name=name,
+            location=location,
+            source_url="https://annuaire-entreprises.data.gouv.fr/entreprise/315000943",
+            development_evidence="Estimation La Bonne Boîte.",
+        ),
+    )
+
+
+def test_spontaneous_queue_lists_prospects_without_any_application(engine: Engine) -> None:
+    fresh = _prospect(engine, "Alpha Info")
+    with_letter = _prospect(engine, "Beta Soft")
+    applied_spontaneously = _prospect(engine, "Gamma Dev")
+    applied_via_offer = _prospect(engine, "Atelier Tech", "Nice")
+    save_cover_letter(engine, "Madame, Monsieur,\n\nBonjour.", company_id=with_letter.id)
+    mark_spontaneous_sent(engine, applied_spontaneously.id, role="Développeur PHP")
+    offer = create_offer(engine, _offer("Développeur PHP", "PHP.", company="Atelier Tech"))
+    mark_offer_sent(engine, offer.id)
+
+    queue = build_spontaneous_queue(engine)
+
+    by_name = {item.company.name: item for item in queue}
+    assert set(by_name) == {"Alpha Info", "Beta Soft"}
+    assert by_name["Alpha Info"].has_letter is False
+    assert by_name["Beta Soft"].has_letter is True
+    assert fresh.id == by_name["Alpha Info"].company.id
+    assert applied_via_offer.id not in {item.company.id for item in queue}
+
+
+def test_mark_spontaneous_sent_creates_application_without_offer(engine: Engine) -> None:
+    company = _prospect(engine, "Alpha Info")
+
+    application = mark_spontaneous_sent(
+        engine, company.id, role="  Développeur backend  ", sent_on=date(2026, 10, 6)
+    )
+
+    assert application.job_offer_id is None
+    assert application.role == "Développeur backend"
+    assert application.status == "Envoyée"
+    assert application.next_action_on == "2026-10-13"
+    assert application.notes == "Candidature spontanée."
+    assert [a.id for a in list_applications(engine)] == [application.id]
+    assert [a.id for a in due_follow_ups(engine, today=date(2026, 10, 13))] == [application.id]
+    with pytest.raises(SpontaneousAlreadySent):
+        mark_spontaneous_sent(engine, company.id, role="Développeur backend")
+
+
+def test_mark_spontaneous_sent_validates_company_and_role(engine: Engine) -> None:
+    company = _prospect(engine, "Alpha Info")
+
+    with pytest.raises(ValueError, match="poste visé"):
+        mark_spontaneous_sent(engine, company.id, role="   ")
+    with pytest.raises(CompanyNotFound):
+        mark_spontaneous_sent(engine, "0" * 32, role="Développeur")
+
+
+def test_contact_search_links_are_plain_links_with_encoded_company_name(engine: Engine) -> None:
+    company = _prospect(engine, "Société & Fils", "Aix-en-Provence")
+
+    links = dict(contact_search_links(company))
+
+    assert links["Chercher le site et le contact"] == (
+        "https://www.google.com/search?q=Soci%C3%A9t%C3%A9+%26+Fils+Aix-en-Provence+contact+recrutement"
+    )
+    assert links["Chercher sur LinkedIn"].endswith("keywords=Soci%C3%A9t%C3%A9+%26+Fils")
 
 
 def test_follow_ups_ignore_applications_that_are_not_pending(engine: Engine) -> None:
