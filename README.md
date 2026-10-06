@@ -25,7 +25,7 @@ L'interface s'ouvre dans le navigateur et reste accessible localement. Les choix
 Le socle local, l'édition du profil, l'import du CV et la gestion manuelle des offres sont en
 place. Le profil est validé puis persisté dans SQLite. Au premier lancement, si
 `data/profile_seed.json` existe, il est importé une seule fois ; sinon le profil peut être saisi
-depuis la rubrique **Profil**.
+depuis la page **Mon profil**.
 
 Depuis **CV de référence**, sélectionnez un PDF textuel ou un DOCX (maximum 10 Mo), extrayez et
 relisez le texte, puis enregistrez la version vérifiée. Pour les PDF, l'extraction récupère d'abord
@@ -95,14 +95,16 @@ Les lettres, les CV ciblés et les noms de fichier reprennent le **poste seul** 
 Symfony (IT) H/F - CDI - Paris » devient « Développeur PHP Symfony ». Le genre (H/F), le contrat,
 la ville, l'entreprise et les slogans sont retirés, les précisions techniques courtes sont gardées.
 
-La page **File d'envoi** (rubrique Candidatures) regroupe les offres à traiter, classées par score
-global, avec l'état de leur CV et de leur lettre. Pour chaque offre : ouvre l'annonce, prépare puis
-télécharge les PDF (le CV ciblé et la lettre enregistrés), relis la lettre, postule toi-même sur le
-site de l'employeur, puis clique sur **J'ai envoyé ma candidature**. Cela crée la candidature
-« Envoyée » avec une relance à 7 jours et retire l'offre de la file. Si l'entreprise n'a pas de
-fiche, une fiche minimale est créée à partir de l'annonce (sans contact). Les offres peuvent être
-marquées « Intéressante » ou écartées. Les relances échues apparaissent en tête de page. Rien
-n'est envoyé automatiquement.
+La page **File d'envoi** (menu Candidater) regroupe les offres à traiter, classées par score
+global. Chaque offre tient sur une carte compacte (score, état du dossier, lieu, source) avec trois
+actions : **Candidater**, ⭐ (intéressante) et ✕ (écarter). **Candidater** ouvre une fenêtre qui
+réunit l'annonce, le CV et la lettre en PDF, la lettre à relire et le texte de l'annonce à
+compléter. Après avoir postulé toi-même sur le site de l'employeur, clique sur **J'ai envoyé ma
+candidature** : la candidature « Envoyée » est créée avec une relance à 7 jours et l'offre quitte la
+file. Le temps passé entre l'ouverture du dossier et l'envoi est mesuré ; sa moyenne s'affiche sur
+l'accueil. Si l'entreprise n'a pas de fiche, une fiche minimale est créée à partir de l'annonce
+(sans contact). Les relances échues apparaissent en tête de page. Rien n'est envoyé
+automatiquement.
 
 Les extraits Adzuna sont coupés à 500 caractères : la carte l'indique, et le volet
 **Compléter l'annonce** permet de coller le texte complet copié depuis l'annonce d'origine. Le

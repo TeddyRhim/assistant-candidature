@@ -25,8 +25,10 @@ from src.services.job_offers import OfferNotFound, create_offer, list_offers
 from src.services.send_queue import (
     OfferAlreadySent,
     SpontaneousAlreadySent,
+    average_prep_seconds,
     build_send_queue,
     build_spontaneous_queue,
+    clamp_prep_seconds,
     complete_offer_description,
     contact_search_links,
     due_follow_ups,
@@ -372,3 +374,22 @@ def test_follow_ups_ignore_applications_that_are_not_pending(engine: Engine) -> 
         stored.status = "Entretien"
 
     assert due_follow_ups(engine, today=date(2026, 12, 1)) == []
+
+
+def test_prep_seconds_are_stored_and_averaged(engine: Engine) -> None:
+    assert average_prep_seconds(engine) is None
+    first = create_offer(engine, _offer("Développeur PHP", "PHP.", url="https://example.com/1"))
+    second = create_offer(engine, _offer("Développeur Symfony", "Symfony.", url="https://example.com/2"))
+    third = create_offer(engine, _offer("Développeur Laravel", "Laravel.", url="https://example.com/3"))
+
+    mark_offer_sent(engine, first.id, prep_seconds=120)
+    mark_offer_sent(engine, second.id, prep_seconds=240)
+    mark_offer_sent(engine, third.id)
+
+    assert average_prep_seconds(engine) == 180
+
+
+def test_clamp_prep_seconds_bounds_forgotten_windows() -> None:
+    assert clamp_prep_seconds(-5) == 0
+    assert clamp_prep_seconds(95.7) == 95
+    assert clamp_prep_seconds(10 * 3600) == 3600

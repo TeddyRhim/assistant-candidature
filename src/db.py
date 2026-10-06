@@ -42,6 +42,11 @@ def _migrate_database(engine: Engine) -> None:
                 "REFERENCES companies(id) ON DELETE SET NULL"
             )
             raw_connection.commit()
+        cursor.execute("PRAGMA table_info(applications)")
+        application_columns = [row[1] for row in cursor.fetchall()]
+        if application_columns and "prep_seconds" not in application_columns:
+            cursor.execute("ALTER TABLE applications ADD COLUMN prep_seconds INTEGER")
+            raw_connection.commit()
         cursor.close()
 
 

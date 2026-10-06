@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import time
+from datetime import date
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -87,6 +89,7 @@ from src.services.job_offers import (
     OfferNotFound,
     create_offer,
     delete_offer,
+    get_offer,
     list_offers,
     update_offer,
 )
@@ -137,6 +140,7 @@ from src.services.job_sources.lever import (
     extract_lever_site_slug,
     fetch_lever_listings,
 )
+from src.services.job_titles import extract_job_role
 from src.services.job_watcher import (
     MonitoredTarget,
     find_excluded_keyword,
@@ -164,8 +168,10 @@ from src.services.send_queue import (
     OfferAlreadySent,
     QueueItem,
     SpontaneousItem,
+    average_prep_seconds,
     build_send_queue,
     build_spontaneous_queue,
+    clamp_prep_seconds,
     complete_offer_description,
     contact_search_links,
     due_follow_ups,
@@ -218,63 +224,88 @@ def get_engine() -> Engine:
     return engine
 
 
-def show_home(profile: ProfileData) -> None:
-    st.title("Assistant candidatures")
-    st.write(
-        "Un espace local pour organiser votre recherche d'emploi, analyser des offres "
-        "et préparer des candidatures adaptées."
-    )
-    st.info(
-        "Vos données de profil sont enregistrées localement. Aucun CV ni renseignement "
-        "personnel n'est envoyé à un service distant."
-    )
-    offer_count = len(list_offers(get_engine()))
-    company_count = len(list_companies(get_engine()))
-    company_candidate_count = len(list_company_candidates(get_engine()))
-    application_count = len(list_applications(get_engine()))
-    metric_columns = st.columns(4)
-    metric_columns[0].metric("Offres enregistrées", offer_count)
-    metric_columns[1].metric("Fiches entreprises", company_count)
-    metric_columns[2].metric("Pistes registre à vérifier", company_candidate_count)
-    metric_columns[3].metric("Candidatures suivies", application_count)
-    if offer_count == 0:
-        st.info(
-            "Aucune offre n'est préchargée : ajoute-en une manuellement ou connecte une "
-            "source autorisée."
-        )
 
+def _format_duration(seconds: int) -> str:
+    minutes, rest = divmod(seconds, 60)
+    return f"{minutes} min {rest:02d} s" if minutes else f"{rest} s"
+
+
+def _score_badge(score: int) -> str:
+    color = "green" if score >= 70 else "orange" if score >= 50 else "gray"
+    return f":{color}-badge[Score {score} %]"
+
+
+def show_home(engine: Engine, profile: ProfileData) -> None:
+    st.title("Aujourd'hui")
     if not profile.target_role:
-        st.warning("Commencez par compléter votre profil dans la rubrique Profil.")
+        st.warning("Commence par compléter ton profil (menu « Mon profil »).")
         return
 
-    st.subheader("Profil de recherche")
-    st.write(profile.target_role)
-    first, second, third = st.columns(3)
-    with first:
-        years = "Non renseigné"
-        if (
-            profile.experience_min_years is not None
-            and profile.experience_max_years is not None
-        ):
-            years = f"{profile.experience_min_years:g}–{profile.experience_max_years:g} ans"
-        st.metric("Expérience", years)
-    with second:
-        st.metric("Compétences suivies", len(profile.skills))
-    with third:
-        st.metric(
-            "Contrat privilégié",
-            ", ".join(profile.preferred_contracts) or "Non renseigné",
-        )
-    st.write(f"**Zone :** {', '.join(profile.local_locations) or 'À définir'}")
-    if profile.remote_only_outside_local_area:
-        st.caption(
-            "Hors de la zone indiquée, seuls les postes entièrement en télétravail sont visés."
-        )
-    st.subheader("Prochaines étapes")
-    st.write(
-        "Ajoutez vos premières offres manuellement, puis nous pourrons construire le "
-        "comparatif explicable entre une annonce et votre profil."
+    min_score = load_watcher_config().min_match_percentage
+    queue = build_send_queue(engine, profile, min_score)
+    due = due_follow_ups(engine)
+    sent_count = sum(a.status != "À préparer" for a in list_applications(engine))
+    average = average_prep_seconds(engine)
+
+    metrics = st.columns(4)
+    metrics[0].metric("Relances à faire", len(due))
+    metrics[1].metric("Offres à traiter", len(queue))
+    metrics[2].metric("Dossiers prêts", sum(item.is_ready for item in queue))
+    metrics[3].metric(
+        "Temps moyen / candidature",
+        _format_duration(average) if average is not None else "—",
+        help="Mesuré entre l'ouverture du dossier dans la file d'envoi et l'enregistrement "
+        f"de l'envoi. {sent_count} candidature(s) suivie(s) au total.",
     )
+
+    if due:
+        st.subheader(f"À relancer ({len(due)})")
+        _show_follow_ups(engine, limit=3, heading=False)
+
+    st.subheader("À envoyer maintenant")
+    if not queue:
+        st.info(
+            "Aucune offre à traiter pour l'instant. Lance la veille ou baisse le score minimal "
+            "dans la file d'envoi."
+        )
+    for item in queue[:3]:
+        with st.container(border=True):
+            columns = st.columns([5, 2], vertical_alignment="center")
+            offer = item.offer
+            ready = ":green-badge[Dossier prêt]" if item.is_ready else ":gray-badge[À préparer]"
+            columns[0].markdown(
+                f"**{extract_job_role(offer.title, offer.location)}** — "
+                f"{offer.company or 'Entreprise non précisée'}  \n"
+                f"{_score_badge(item.score)} {ready}"
+            )
+            columns[1].page_link(PAGES["queue"], label="Ouvrir la file d'envoi", icon="📨")
+    if len(queue) > 3:
+        st.caption(f"{len(queue) - 3} autre(s) offre(s) dans la file d'envoi.")
+
+    watcher = get_global_watcher()
+    last = watcher.last_result
+    with st.container(border=True):
+        columns = st.columns([5, 2], vertical_alignment="center")
+        status = "🟢 Veille active" if watcher.is_active else "⚪ Veille inactive"
+        detail = (
+            f"dernier cycle {last.started_at[:16].replace('T', ' ')} UTC · "
+            f"{last.new_offers_imported} nouvelle(s) offre(s)"
+            if last
+            else "aucun cycle lancé depuis le démarrage de l'application"
+        )
+        columns[0].markdown(f"**{status}** — {detail}")
+        columns[1].page_link(PAGES["search"], label="Gérer la veille", icon="🔭")
+
+    with st.expander("Profil de recherche"):
+        st.write(profile.target_role)
+        st.write(f"**Zone :** {', '.join(profile.local_locations) or 'À définir'}")
+        st.write(f"**Contrat privilégié :** {', '.join(profile.preferred_contracts) or '—'}")
+        if profile.remote_only_outside_local_area:
+            st.caption(
+                "Hors de la zone indiquée, seuls les postes entièrement en télétravail sont "
+                "visés."
+            )
+    st.caption(f"Nous sommes le {date.today().strftime('%d/%m/%Y')}.")
 
 
 def show_profile_form(engine: Engine, profile: ProfileData) -> None:
@@ -3427,16 +3458,18 @@ def _build_queue_documents(engine: Engine, offer) -> dict[str, object]:
     return documents
 
 
-def _show_follow_ups(engine: Engine) -> None:
+
+def _show_follow_ups(engine: Engine, *, limit: int | None = None, heading: bool = True) -> None:
     due = due_follow_ups(engine)
     if not due:
         return
     companies_by_id = {company.id: company for company in list_companies(engine)}
-    st.subheader(f"À relancer ({len(due)})")
-    for application in due:
+    if heading:
+        st.subheader(f"À relancer ({len(due)})")
+    for application in due[:limit]:
         company = companies_by_id.get(application.company_id)
         company_label = company.name if company else "Entreprise supprimée"
-        columns = st.columns([5, 2])
+        columns = st.columns([5, 2], vertical_alignment="center")
         columns[0].write(
             f"**{application.role}** — {company_label}  \n"
             f"Envoyée le {application.applied_on or '?'} · relance prévue le "
@@ -3453,7 +3486,10 @@ def _show_follow_ups(engine: Engine) -> None:
             else:
                 st.session_state["queue_flash"] = "Relance enregistrée."
                 st.rerun()
-    st.markdown("---")
+    if limit is not None and len(due) > limit:
+        st.caption(f"{len(due) - limit} autre(s) relance(s) dans la file d'envoi.")
+    if heading:
+        st.markdown("---")
 
 
 def _show_complete_description_form(engine: Engine, profile: ProfileData, offer) -> None:
@@ -3493,120 +3529,162 @@ def _show_complete_description_form(engine: Engine, profile: ProfileData, offer)
         st.rerun()
 
 
+
+@st.dialog("Candidater", width="large")
+def _application_dialog(engine: Engine, profile: ProfileData, offer_id: str) -> None:
+    offer = get_offer(engine, offer_id)
+    if offer is None:
+        st.error("Cette offre n'existe plus.")
+        return
+    docs_key = f"queue_docs_{offer.id}"
+    st.markdown(
+        f"### {extract_job_role(offer.title, offer.location)}\n"
+        f"{offer.company or 'Entreprise non précisée'} · {offer.location or 'Lieu non précisé'}"
+    )
+    if docs_key not in st.session_state:
+        with st.spinner("Préparation des PDF…"):
+            st.session_state[docs_key] = _build_queue_documents(engine, offer)
+    documents = st.session_state[docs_key]
+
+    st.markdown("**1. Ouvre l'annonce et récupère tes documents**")
+    columns = st.columns(3)
+    if offer.url:
+        columns[0].link_button("Ouvrir l'annonce", offer.url, width="stretch")
+    else:
+        columns[0].caption("Aucun lien enregistré")
+    for column, key, label in (
+        (columns[1], "cv", "CV (PDF)"),
+        (columns[2], "letter", "Lettre (PDF)"),
+    ):
+        if documents[key]:
+            data, file_name = documents[key]
+            column.download_button(
+                label,
+                data=data,
+                file_name=file_name,
+                mime="application/pdf",
+                key=f"queue_download_{key}_{offer.id}",
+                icon=":material/download:",
+                width="stretch",
+            )
+        else:
+            column.caption(f"{label} indisponible")
+    for message in documents["errors"]:
+        st.warning(message)
+
+    letter = get_cover_letter(engine, job_offer_id=offer.id)
+    truncated = is_probably_truncated(offer)
+    letter_tab, text_tab = st.tabs(
+        ["Lettre à relire", "Texte de l'annonce" + (" ⚠️ tronqué" if truncated else "")]
+    )
+    with letter_tab:
+        if letter is not None:
+            with st.container(height=280):
+                st.text(letter.content)
+        else:
+            st.info("Aucune lettre enregistrée : prépare d'abord le dossier.")
+    with text_tab:
+        if truncated:
+            st.warning(
+                "Texte tronqué par Adzuna : colle le texte complet pour un score et un "
+                "dossier fidèles à l'annonce."
+            )
+        _show_complete_description_form(engine, profile, offer)
+
+    st.markdown("**2. Une fois envoyée, enregistre l'envoi**")
+    if st.button(
+        "J'ai envoyé ma candidature",
+        key=f"queue_sent_{offer.id}",
+        type="primary",
+        icon=":material/send:",
+        width="stretch",
+        help=f"Crée la candidature « Envoyée » avec une relance dans {FOLLOW_UP_DAYS} jours.",
+    ):
+        started = st.session_state.pop(f"queue_started_{offer.id}", None)
+        prep = clamp_prep_seconds(time.time() - started) if started else None
+        try:
+            mark_offer_sent(engine, offer.id, prep_seconds=prep)
+        except (OfferNotFound, OfferAlreadySent) as error:
+            st.error(str(error))
+        else:
+            st.session_state.pop(docs_key, None)
+            duration = f" en {_format_duration(prep)}" if prep is not None else ""
+            st.session_state["queue_flash"] = (
+                f"Candidature enregistrée{duration}. Relance prévue dans {FOLLOW_UP_DAYS} jours."
+            )
+            st.rerun()
+
+
 def _show_queue_card(engine: Engine, profile: ProfileData, item: QueueItem) -> None:
     offer = item.offer
-    docs_key = f"queue_docs_{offer.id}"
     with st.container(border=True):
-        st.markdown(
-            f"**{normalize_job_title(offer.title)}** — "
-            f"{offer.company or 'Entreprise non précisée'}"
-        )
-        details = [f"Score {item.score} %", offer.location or "Lieu non précisé", offer.source]
-        if offer.contract_type:
-            details.insert(2, offer.contract_type)
+        columns = st.columns([6, 3], vertical_alignment="center")
+        badges = [_score_badge(item.score)]
         if offer.status == "Intéressante":
-            details.insert(0, "⭐")
-        st.caption(" · ".join(details))
-        st.caption(
-            f"{'✅' if item.has_resume else '⚠️'} CV ciblé · "
-            f"{'✅' if item.has_letter else '⚠️'} Lettre"
+            badges.append(":yellow-badge[⭐ Intéressante]")
+        badges.append(
+            ":green-badge[Dossier prêt]" if item.is_ready else ":gray-badge[Dossier à préparer]"
         )
-        truncated = is_probably_truncated(offer)
-        if truncated:
-            st.caption(
-                "Texte d'annonce tronqué par Adzuna : colle le texte complet ci-dessous pour "
-                "un score et un dossier fidèles à l'annonce."
-            )
-        expander_label = (
-            "Compléter l'annonce (texte tronqué)"
-            if truncated
-            else "Remplacer le texte de l'annonce"
+        if is_probably_truncated(offer):
+            badges.append(":orange-badge[Annonce tronquée]")
+        info = " · ".join(
+            part for part in (offer.contract_type, offer.location, offer.source) if part
         )
-        with st.expander(expander_label):
-            _show_complete_description_form(engine, profile, offer)
-
-        actions = st.columns(4)
-        if offer.url:
-            actions[0].link_button("1. Ouvrir l'annonce", offer.url)
-        else:
-            actions[0].caption("Aucun lien enregistré")
-        if item.is_ready:
-            if actions[1].button("2. Préparer les PDF", key=f"queue_pdf_{offer.id}"):
-                st.session_state[docs_key] = _build_queue_documents(engine, offer)
-        elif actions[1].button("Préparer le dossier", key=f"queue_prepare_{offer.id}"):
-            result = prepare_dossier_for_offer(engine, offer.id, offer_to_data(offer), profile)
-            st.session_state["queue_flash"] = (
-                f"Dossier incomplet : {result.error}" if result.error else "Dossier préparé."
-            )
-            st.rerun()
-        if offer.status != "Intéressante" and actions[2].button(
-            "⭐ Intéressante", key=f"queue_star_{offer.id}"
-        ):
-            set_offer_status(engine, offer.id, "Intéressante")
-            st.rerun()
-        if actions[3].button("Écarter", key=f"queue_discard_{offer.id}"):
-            set_offer_status(engine, offer.id, "Écartée")
-            st.session_state["queue_flash"] = "Offre écartée de la file."
-            st.rerun()
-
-        documents = st.session_state.get(docs_key)
-        if documents:
-            downloads = st.columns(2)
-            for column, key, label in (
-                (downloads[0], "cv", "Télécharger le CV (PDF)"),
-                (downloads[1], "letter", "Télécharger la lettre (PDF)"),
+        columns[0].markdown(
+            f"**{extract_job_role(offer.title, offer.location)}** — "
+            f"{offer.company or 'Entreprise non précisée'}  \n{' '.join(badges)}  \n"
+            f":gray[{info}]"
+        )
+        with columns[1]:
+            actions = st.columns([4, 1, 1])
+            if item.is_ready:
+                if actions[0].button(
+                    "Candidater",
+                    key=f"queue_open_{offer.id}",
+                    type="primary",
+                    icon=":material/play_arrow:",
+                    width="stretch",
+                ):
+                    st.session_state[f"queue_started_{offer.id}"] = time.time()
+                    _application_dialog(engine, profile, offer.id)
+            elif actions[0].button(
+                "Préparer",
+                key=f"queue_prepare_{offer.id}",
+                icon=":material/auto_fix_high:",
+                width="stretch",
             ):
-                if documents[key]:
-                    data, file_name = documents[key]
-                    column.download_button(
-                        label,
-                        data=data,
-                        file_name=file_name,
-                        mime="application/pdf",
-                        key=f"queue_download_{key}_{offer.id}",
-                    )
-            for message in documents["errors"]:
-                st.warning(message)
-
-        if item.has_letter:
-            letter = get_cover_letter(engine, job_offer_id=offer.id)
-            if letter is not None:
-                with st.expander("Relire la lettre"):
-                    st.text(letter.content)
-
-        st.caption(
-            "Relis le CV et la lettre, envoie-les toi-même sur le site de l'employeur, "
-            "puis enregistre l'envoi."
-        )
-        if st.button(
-            "3. ✅ J'ai envoyé ma candidature",
-            key=f"queue_sent_{offer.id}",
-            type="primary",
-            help=f"Crée la candidature « Envoyée » avec une relance dans {FOLLOW_UP_DAYS} jours.",
-        ):
-            try:
-                mark_offer_sent(engine, offer.id)
-            except (OfferNotFound, OfferAlreadySent) as error:
-                st.error(str(error))
-            else:
-                st.session_state.pop(docs_key, None)
-                st.session_state["queue_flash"] = (
-                    f"Envoi enregistré. Relance prévue dans {FOLLOW_UP_DAYS} jours."
+                result = prepare_dossier_for_offer(
+                    engine, offer.id, offer_to_data(offer), profile
                 )
+                st.session_state["queue_flash"] = (
+                    f"Dossier incomplet : {result.error}" if result.error else "Dossier préparé."
+                )
+                st.rerun()
+            if offer.status != "Intéressante" and actions[1].button(
+                "",
+                key=f"queue_star_{offer.id}",
+                icon=":material/star:",
+                help="Marquer comme intéressante",
+            ):
+                set_offer_status(engine, offer.id, "Intéressante")
+                st.rerun()
+            if actions[2].button(
+                "",
+                key=f"queue_discard_{offer.id}",
+                icon=":material/close:",
+                help="Écarter cette offre de la file",
+            ):
+                set_offer_status(engine, offer.id, "Écartée")
+                st.session_state["queue_flash"] = "Offre écartée de la file."
                 st.rerun()
 
 
 def show_send_queue_page(engine: Engine, profile: ProfileData) -> None:
     st.title("File d'envoi")
-    st.write(
-        "Les offres les plus pertinentes et les entreprises à contacter, avec leur CV et leur "
-        "lettre prêts. L'envoi reste manuel : relis les documents, candidate sur le site ou "
-        "par e-mail, puis enregistre l'envoi pour déclencher le suivi et la relance."
+    st.caption(
+        "L'envoi reste manuel : « Candidater » ouvre le dossier (annonce, CV, lettre), tu "
+        "envoies toi-même, puis tu enregistres l'envoi pour lancer le suivi."
     )
-    flash = st.session_state.pop("queue_flash", None)
-    if flash:
-        st.success(flash)
-
     _show_follow_ups(engine)
 
     offers_tab, spontaneous_tab = st.tabs(["Offres", "Candidatures spontanées"])
@@ -3643,7 +3721,7 @@ def _show_offers_queue(engine: Engine, profile: ProfileData) -> None:
     if ready_count < len(queue):
         st.caption(
             "Les dossiers incomplets se préparent offre par offre, ou en lot depuis "
-            "« Recherche en ligne → Veille automatique planifiée »."
+            "la page « Recherche en ligne » (onglet Veille automatique planifiée)."
         )
     for item in queue[:limit]:
         _show_queue_card(engine, profile, item)
@@ -3790,8 +3868,8 @@ def _show_spontaneous_queue(engine: Engine, profile: ProfileData) -> None:
     metrics[1].metric("Lettres prêtes", sum(item.has_letter for item in queue))
     if not queue:
         st.info(
-            "Aucune entreprise à contacter. Ajoute des pistes depuis « Recherche → Découvrir "
-            "des entreprises » (onglet La Bonne Boîte)."
+            "Aucune entreprise à contacter. Ajoute des pistes depuis la page « Découvrir des "
+            "entreprises » (onglet La Bonne Boîte)."
         )
         return
     limit = st.selectbox("Entreprises affichées", options=[10, 20, 50], index=0)
@@ -3809,74 +3887,90 @@ st.markdown(
     [data-testid="stSidebar"] {
         border-right: 1px solid rgba(120, 130, 150, 0.18);
     }
-    [data-testid="stSidebar"] [role="radiogroup"] {
-        gap: 0.25rem;
-    }
-    [data-testid="stSidebar"] [role="radiogroup"] label {
-        padding: 0.35rem 0.55rem;
-        border-radius: 0.5rem;
-    }
-    [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-        background: rgba(100, 120, 150, 0.10);
-    }
     </style>
     """,
     unsafe_allow_html=True,
 )
-with st.sidebar:
-    st.title("Candidatures")
-    st.caption("Recherche · préparation · suivi")
-    section = st.radio(
-        "Rubriques",
-        ["Vue d'ensemble", "Recherche", "Candidatures"],
-        label_visibility="collapsed",
-    )
-    page_groups = {
-        "Vue d'ensemble": ["Accueil", "Profil", "CV de référence"],
-        "Recherche": [
-            "Offres",
-            "Recherche en ligne",
-            "Découvrir des entreprises",
-            "Entreprises à prospecter",
-        ],
-        "Candidatures": [
-            "File d'envoi",
-            "CV par offre",
-            "Candidature spontanée",
-            "Envoyer un e-mail",
-            "Candidatures",
+PAGES: dict[str, st.Page] = {
+    "home": st.Page(
+        lambda: show_home(engine, profile),
+        title="Aujourd'hui",
+        icon="🏠",
+        url_path="aujourdhui",
+        default=True,
+    ),
+    "profile": st.Page(
+        lambda: show_profile_form(engine, profile), title="Mon profil", icon="👤", url_path="profil"
+    ),
+    "resume": st.Page(
+        lambda: show_resume_page(engine), title="CV de référence", icon="📄", url_path="cv"
+    ),
+    "offers": st.Page(
+        lambda: show_offers_page(engine, profile), title="Offres", icon="📋", url_path="offres"
+    ),
+    "search": st.Page(
+        lambda: show_job_search_page(engine, profile),
+        title="Recherche en ligne",
+        icon="🔭",
+        url_path="recherche",
+    ),
+    "discovery": st.Page(
+        lambda: show_company_discovery_page(engine),
+        title="Découvrir des entreprises",
+        icon="🧭",
+        url_path="decouvrir",
+    ),
+    "companies": st.Page(
+        lambda: show_companies_page(engine, profile),
+        title="Entreprises à prospecter",
+        icon="🏢",
+        url_path="entreprises",
+    ),
+    "queue": st.Page(
+        lambda: show_send_queue_page(engine, profile),
+        title="File d'envoi",
+        icon="📨",
+        url_path="file-d-envoi",
+    ),
+    "tailored": st.Page(
+        lambda: show_tailored_resume_page(engine, profile),
+        title="CV par offre",
+        icon="🎯",
+        url_path="cv-par-offre",
+    ),
+    "spontaneous": st.Page(
+        lambda: show_cover_letter_page(engine, profile),
+        title="Candidature spontanée",
+        icon="✉️",
+        url_path="spontanee",
+    ),
+    "email": st.Page(
+        lambda: show_email_page(engine), title="Envoyer un e-mail", icon="📤", url_path="email"
+    ),
+    "applications": st.Page(
+        lambda: show_applications_page(engine),
+        title="Suivi des candidatures",
+        icon="📊",
+        url_path="suivi",
+    ),
+}
+navigation = st.navigation(
+    {
+        "Accueil": [PAGES["home"]],
+        "Préparer": [PAGES["profile"], PAGES["resume"]],
+        "Trouver": [PAGES["offers"], PAGES["search"], PAGES["discovery"], PAGES["companies"]],
+        "Candidater": [
+            PAGES["queue"],
+            PAGES["tailored"],
+            PAGES["spontaneous"],
+            PAGES["email"],
+            PAGES["applications"],
         ],
     }
-    st.markdown("---")
-    page = st.radio(
-        section,
-        page_groups[section],
-        label_visibility="collapsed",
-        key=f"navigation_{section}",
-    )
-if page == "Profil":
-    show_profile_form(engine, profile)
-elif page == "CV de référence":
-    show_resume_page(engine)
-elif page == "Offres":
-    show_offers_page(engine, profile)
-elif page == "Recherche en ligne":
-    show_job_search_page(engine, profile)
-elif page == "File d'envoi":
-    show_send_queue_page(engine, profile)
-elif page == "CV par offre":
-    show_tailored_resume_page(engine, profile)
-elif page == "Candidature spontanée":
-    show_cover_letter_page(engine, profile)
-elif page == "Découvrir des entreprises":
-    show_company_discovery_page(engine)
-elif page == "Entreprises à prospecter":
-    show_companies_page(engine, profile)
-elif page == "Envoyer un e-mail":
-    show_email_page(engine)
-elif page == "Candidatures":
-    show_applications_page(engine)
-else:
-    show_home(profile)
+)
+flash = st.session_state.pop("queue_flash", None)
+if flash:
+    st.toast(flash, icon="✅")
+navigation.run()
 
 st.caption("Application locale — les bases, CV importés et exports restent sur cet ordinateur.")

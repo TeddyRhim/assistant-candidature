@@ -92,6 +92,11 @@ def delete_offer(engine: Engine, offer_id: str) -> None:
         session.delete(offer)
 
 
+def get_offer(engine: Engine, offer_id: str) -> JobOffer | None:
+    with Session(engine) as session:
+        return session.get(JobOffer, offer_id)
+
+
 def list_offers(engine: Engine) -> list[JobOffer]:
     with Session(engine) as session:
         return list(

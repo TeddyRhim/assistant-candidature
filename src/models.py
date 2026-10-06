@@ -5,7 +5,7 @@ from datetime import date
 from typing import Literal
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import JSON, ForeignKey, String, Text
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 SkillCategory = Literal[
@@ -261,6 +261,7 @@ class Application(Base):
     next_action_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    prep_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ResumeVersion(Base):

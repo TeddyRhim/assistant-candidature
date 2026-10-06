@@ -218,8 +218,12 @@ def mark_offer_sent(
     *,
     sent_on: date | None = None,
     follow_up_days: int = FOLLOW_UP_DAYS,
+    prep_seconds: int | None = None,
 ) -> Application:
-    """Enregistre que l'utilisateur a envoyé sa candidature et planifie une relance."""
+    """Enregistre que l'utilisateur a envoyé sa candidature et planifie une relance.
+
+    `prep_seconds` est le temps passé sur le dossier avant l'envoi (mesure facultative).
+    """
     sent = sent_on or date.today()
     now = datetime.now(UTC).isoformat()
     with Session(engine, expire_on_commit=False) as session, session.begin():
@@ -240,6 +244,7 @@ def mark_offer_sent(
             next_action_on=(sent + timedelta(days=follow_up_days)).isoformat(),
             notes="",
             created_at=now,
+            prep_seconds=prep_seconds,
         )
         session.add(application)
         offer.status = "Candidature liée"
@@ -367,3 +372,24 @@ def mark_followed_up(
         log = f"Relancée le {day.isoformat()}."
         application.notes = f"{application.notes}\n{log}".strip()
     return application
+
+
+MAX_PREP_SECONDS = 3600
+
+
+def clamp_prep_seconds(seconds: float) -> int:
+    """Borne une durée mesurée : une fenêtre laissée ouverte ne doit pas fausser la moyenne."""
+    return max(0, min(int(seconds), MAX_PREP_SECONDS))
+
+
+def average_prep_seconds(engine: Engine) -> int | None:
+    """Temps moyen passé sur un dossier avant envoi, ou None si aucune mesure."""
+    with Session(engine) as session:
+        values = list(
+            session.scalars(
+                select(Application.prep_seconds).where(Application.prep_seconds.is_not(None))
+            )
+        )
+    if not values:
+        return None
+    return round(sum(values) / len(values))
