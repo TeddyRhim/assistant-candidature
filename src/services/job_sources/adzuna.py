@@ -28,20 +28,6 @@ PROFILE_SEARCH_SKILL_LIMIT = 8
 # Veille : une requête à la fois, espacées, pour rester sous la limite de débit d'Adzuna.
 THROTTLED_PAUSE_SECONDS = 3.0
 THROTTLED_RETRY_WAIT_SECONDS = 65.0
-LOCAL_SEARCH_LOCATIONS = (
-    "Nice",
-    "Cannes",
-    "Mougins",
-    "Sophia Antipolis",
-    "Antibes",
-    "Grasse",
-    "Cagnes-sur-Mer",
-    "Menton",
-    "Var",
-    "Toulon",
-    "Marseille",
-    "Paris",
-)
 ADZUNA_MARKETS = {
     "at": "Autriche",
     "be": "Belgique",
@@ -290,6 +276,13 @@ def get_profile_search_status(job_id: str) -> ProfileSearchJobStatus:
 def _target_label(country_code: str, location: str) -> str:
     country_name = ADZUNA_MARKETS.get(country_code, country_code.upper())
     return f"{location}, {country_name}" if location else country_name
+
+
+def resolve_search_locations(
+    profile: ProfileData, configured: list[str] | None = None
+) -> list[str]:
+    """Zones à interroger : celles de la configuration locale, sinon la zone du profil."""
+    return [zone.strip() for zone in (configured or profile.local_locations) if zone.strip()]
 
 
 def is_paris_listing(listing: SourceListing) -> bool:

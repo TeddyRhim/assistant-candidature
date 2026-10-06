@@ -38,7 +38,7 @@ FRANCE_TRAVAIL_PAGE_SIZE = 50
 FRANCE_TRAVAIL_MAX_PAGE_SIZE = 150
 FRANCE_TRAVAIL_WORKERS = 4
 PUBLISHED_SINCE_CHOICES = (1, 3, 7, 14, 31)
-DEFAULT_DEPARTMENTS = ("06", "83", "13", "75")
+DEFAULT_DEPARTMENTS: tuple[str, ...] = ()  # à choisir dans la page Veille
 DEPARTMENT_NAMES = {
     "06": "Alpes-Maritimes",
     "83": "Var",

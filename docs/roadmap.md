@@ -176,11 +176,9 @@ sans transmettre le document à un service distant.
 
 ### Décisions à recueillir avant les fonctions métier
 
-- Profil déjà communiqué : développeur backend / full-stack à dominante backend, environ 5 à
-  7 ans d'expérience, compétences détaillées et auto-évaluées dans `specifications.md` ; Nice,
-  Cannes et le département du Var, puis uniquement les postes entièrement en télétravail hors
-  zone ; CDI privilégié. À préciser : secteurs et CV de référence. Les intitulés backend PHP,
-  Symfony et full-stack à dominante backend sont des pistes, pas des filtres obligatoires.
+- Profil : saisi par l'utilisateur dans l'application (poste visé, compétences auto-évaluées,
+  zone, contrats) et stocké localement. Les intitulés visés sont des pistes, pas des filtres
+  obligatoires.
 - Format et état du CV de référence (DOCX, PDF textuel ou PDF scanné) et format d'export souhaité.
 - Emplacement local souhaité pour les données, si différent de `data/`.
 - Sources d'offres réellement souhaitées ; aucune collecte automatisée avant vérification de
@@ -190,7 +188,8 @@ sans transmettre le document à un service distant.
   implémentée ; vérifier couverture, coût/quotas et conditions dans le compte avant usage.
   Connecteurs ciblés Greenhouse et Lever intégrés (`services/job_sources/greenhouse.py`,
   `services/job_sources/lever.py`) pour la collecte directe d'offres en lecture seule.
-- Zone retenue pour le premier répertoire d'entreprises : Nice, Cannes et tout le Var. Définir
+- Zone du répertoire d'entreprises : choisie par l'utilisateur (départements pris en charge par
+  la source). Définir
   une méthode de vérification d'équipe tech, distincte de la recherche candidate par activité
   déclarée via le registre public.
 - Commencer avec des règles déterministes ; réévaluer l'intérêt d'un LLM local uniquement après

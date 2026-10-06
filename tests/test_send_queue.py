@@ -395,13 +395,19 @@ def test_clamp_prep_seconds_bounds_forgotten_windows() -> None:
     assert clamp_prep_seconds(10 * 3600) == 3600
 
 
-def test_queue_puts_south_and_full_remote_offers_before_better_scored_ones(engine: Engine) -> None:
+def test_queue_puts_priority_areas_and_full_remote_before_better_scored_ones(
+    engine: Engine,
+) -> None:
     desc = "PHP et Symfony requis."
+    areas = ["Lyon", "Rhône-Alpes", "(69)"]
     paris = create_offer(
         engine, _offer("Développeur PHP Symfony", desc, company="A", location="Paris")
     )
-    south = create_offer(
-        engine, _offer("Développeur PHP", desc, company="B", location="Cannes, Alpes-Maritimes")
+    local = create_offer(
+        engine, _offer("Développeur PHP", desc, company="B", location="Lyon, Rhône-Alpes")
+    )
+    coded = create_offer(
+        engine, _offer("Développeur PHP API", desc, company="E", location="Villeurbanne (69)")
     )
     remote = create_offer(
         engine,
@@ -409,31 +415,46 @@ def test_queue_puts_south_and_full_remote_offers_before_better_scored_ones(engin
             "Développeur Symfony",
             "Symfony. Poste en full remote.",
             company="C",
-            location="Lyon",
+            location="Lille",
         ),
     )
     paris13 = create_offer(
         engine, _offer("Développeur PHP backend", desc, company="D", location="Paris 13")
     )
 
-    queue = build_send_queue(engine, _profile())
+    queue = build_send_queue(engine, _profile(), priority_areas=areas)
     by_id = {item.offer.id: item for item in queue}
 
-    assert by_id[south.id].priority == "Sud"
+    assert by_id[local.id].priority == "Zone prioritaire"
+    assert by_id[coded.id].priority == "Zone prioritaire"
     assert by_id[remote.id].priority == "Full remote"
     assert by_id[paris.id].priority is None
-    assert by_id[paris13.id].priority is None  # « 13 » nu n'est pas le département
-    assert {queue[0].offer.id, queue[1].offer.id} == {south.id, remote.id}
-    assert queue[0].score >= 0 and all(item.priority is None for item in queue[2:])
+    assert by_id[paris13.id].priority is None  # « 13 » nu n'est pas un code de zone
+    assert {item.offer.id for item in queue[:3]} == {local.id, coded.id, remote.id}
+    assert all(item.priority is None for item in queue[3:])
 
 
-def test_starred_offer_still_comes_before_south_offers(engine: Engine) -> None:
-    south = create_offer(engine, _offer("Développeur PHP", "PHP.", location="Nice"))
+def test_queue_falls_back_to_profile_zone_when_no_priority_area(engine: Engine) -> None:
+    profile = _profile().model_copy(update={"local_locations": ["Lyon"]})
+    near = create_offer(engine, _offer("Développeur PHP", "PHP.", location="Lyon 3e"))
+    far = create_offer(
+        engine, _offer("Développeur Symfony", "Symfony.", location="Lille", company="Z")
+    )
+
+    queue = build_send_queue(engine, profile, priority_areas=[])
+    by_id = {item.offer.id: item for item in queue}
+
+    assert by_id[near.id].priority == "Zone prioritaire"
+    assert by_id[far.id].priority is None
+
+
+def test_starred_offer_still_comes_before_priority_offers(engine: Engine) -> None:
+    south = create_offer(engine, _offer("Développeur PHP", "PHP.", location="Lyon"))
     starred = create_offer(
         engine, _offer("Développeur Symfony", "Symfony.", location="Lille", company="Z")
     )
     set_offer_status(engine, starred.id, "Intéressante")
 
-    queue = build_send_queue(engine, _profile())
+    queue = build_send_queue(engine, _profile(), priority_areas=["Lyon"])
 
     assert [item.offer.id for item in queue][:2] == [starred.id, south.id]

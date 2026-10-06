@@ -7,36 +7,20 @@ Construire un outil personnel, exécuté sur l'ordinateur de l'utilisateur, qui 
 ## 2. Utilisateur et hypothèses de départ
 
 - Utilisateur unique, en recherche d'un poste de développeur.
-- Profil communiqué : développeur backend / full-stack à dominante backend, avec environ 5 à
-  7 ans d'expérience professionnelle. PHP/Symfony et le développement d'API sont les axes forts ;
-  Python et JavaScript sont des compétences intermédiaires/en progression.
-- Zone de recherche initiale : Nice, Cannes et le département du Var ; hors de cette zone,
-  ne retenir que les postes entièrement en télétravail.
-- Périmètre du premier répertoire d'entreprises : Nice, Cannes et tout le département du Var.
-- Type de contrat privilégié : CDI.
-- Les préférences déjà communiquées sont des valeurs initiales modifiables ; le CV de référence
-  et les secteurs restent à préciser par l'utilisateur.
+- Le profil (poste visé, compétences auto-évaluées, zone de recherche, types de contrat) est saisi
+  dans l'application et stocké localement ; aucune donnée personnelle n'est versionnée.
+- Hors de la zone renseignée, l'utilisateur peut choisir de ne retenir que les postes entièrement
+  en télétravail.
+- Les zones interrogées par les sources d'offres, les zones prioritaires et les mots exclus du
+  titre se règlent dans la page Veille (fichier local `data/watcher_config.json`).
+- Les préférences sont des valeurs initiales modifiables ; le CV de référence reste à fournir par
+  l'utilisateur.
 - Le service fonctionne sur une seule machine et n'a pas besoin d'être publié ou accessible depuis Internet.
 - Les documents peuvent contenir des données personnelles : ils restent locaux par défaut.
 - Les premiers connecteurs de recherche seront choisis selon les sources réellement disponibles et leurs conditions d'utilisation.
 
-Les niveaux ci-dessous sont des auto-évaluations communiquées par l'utilisateur. Ils servent à
-orienter la recherche et ne doivent pas être présentés comme des évaluations objectives.
-
-### Compétences communiquées
-
-Échelle déclarée sur 10 ; les fourchettes sont conservées telles quelles.
-
-| Niveau | Compétences |
-| --- | --- |
-| Fortes | PHP (8), Symfony (8), API REST (8), automatisation (8), debug/maintenance (8), traitement de données (8), SQL (7), Doctrine (7), Git (7), JWT (7), cURL/HTTP (7) |
-| Intermédiaires | SOAP (6), PostgreSQL (6), PHPUnit/tests (6), Agile/Scrum (6), SSH/Linux (6), jQuery (6), Docker (5), JavaScript (5), Vue.js (5), Python (5), HTML/CSS (5) |
-| En développement | Java (4), Spring Boot (4), FastAPI (4), microservices (4), Kubernetes (3), Polars (3), Hugging Face (3), LoRA/fine-tuning (3), OAuth2 (3) |
-| IA et nouvelles technologies | LLM (4), IA générative (4), RAG (2–3), bases vectorielles (2–3), agents IA (2–3) |
-
-Les intitulés possibles à tester dans la recherche sont notamment développeur backend PHP,
-développeur Symfony et développeur full-stack à dominante backend ; ils restent des pistes et
-non des contraintes obligatoires. Les secteurs et le CV de référence restent à préciser.
+Les niveaux de compétences sont des auto-évaluations de l'utilisateur. Ils servent à orienter la
+recherche et ne doivent pas être présentés comme des évaluations objectives.
 
 ## 3. Objectifs
 

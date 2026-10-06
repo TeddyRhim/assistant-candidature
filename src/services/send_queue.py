@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from urllib.parse import quote_plus
@@ -31,16 +32,8 @@ FOLLOW_UP_DAYS = 7
 QUEUE_OFFER_STATUSES = ("À examiner", "Intéressante")
 UNKNOWN_COMPANY_NAME = "Entreprise non précisée"
 UNKNOWN_LOCATION = "Lieu non précisé"
-
-# Sud de la France : Provence-Alpes-Côte d'Azur et principales villes d'Occitanie.
-SOUTH_FRANCE_PATTERN = re.compile(
-    r"\b(?:alpes[\s-]+maritimes|nice|cannes|antibes|juan[\s-]+les[\s-]+pins|mougins|grasse|"
-    r"menton|valbonne|biot|sophia[\s-]+antipolis|cagnes|vence|mandelieu|"
-    r"saint[\s-]+laurent[\s-]+du[\s-]+var|var|toulon|hyeres|frejus|saint[\s-]+raphael|"
-    r"draguignan|la[\s-]+seyne|bouches[\s-]+du[\s-]+rhone|marseille|aix[\s-]+en[\s-]+provence|"
-    r"avignon|vaucluse|provence|cote[\s-]+d[\s-]+azur|paca|montpellier|nimes|toulouse|"
-    r"perpignan|herault|occitanie)\b|\((?:06|83|13)\)"
-)
+PRIORITY_AREA_LABEL = "Zone prioritaire"
+REMOTE_LABEL = "Full remote"
 
 
 # Adzuna coupe ses extraits à 500 caractères : une description de cette longueur est suspecte.
@@ -120,7 +113,7 @@ class QueueItem:
     score: int
     has_resume: bool
     has_letter: bool
-    priority: str | None = None  # « Sud » ou « Full remote » : remonte en tête de file
+    priority: str | None = None  # zone prioritaire ou full remote : remonte en tête de file
 
     @property
     def is_ready(self) -> bool:
@@ -145,28 +138,47 @@ def _normalize_place(value: str) -> str:
     return "".join(char for char in text if not unicodedata.combining(char))
 
 
-def offer_priority(offer: JobOffer, profile: ProfileData) -> str | None:
-    """« Sud » (sud de la France ou zone du profil), sinon « Full remote », sinon rien."""
+def _areas_pattern(areas: Sequence[str]) -> re.Pattern[str] | None:
+    """Motif qui reconnaît n'importe laquelle des zones (sans accents, espaces ou tirets)."""
+    parts = []
+    for area in areas:
+        words = re.split(r"[\s-]+", _normalize_place(area).strip())
+        if any(words):
+            parts.append(r"[\s-]+".join(re.escape(word) for word in words if word))
+    if not parts:
+        return None
+    return re.compile(r"(?<!\w)(?:" + "|".join(parts) + r")(?!\w)")
+
+
+def offer_priority(
+    offer: JobOffer, profile: ProfileData, priority_areas: Sequence[str] = ()
+) -> str | None:
+    """Zone prioritaire (réglée en local, sinon zone du profil), sinon full remote, sinon rien."""
+    pattern = _areas_pattern([*priority_areas] or profile.local_locations)
     location = _normalize_place(offer.location or "")
-    if location and (
-        SOUTH_FRANCE_PATTERN.search(location)
-        or any(
-            _normalize_place(zone) in location for zone in profile.local_locations if zone.strip()
-        )
-    ):
-        return "Sud"
+    if pattern is not None and location and pattern.search(location):
+        return PRIORITY_AREA_LABEL
     if is_remote_offer(offer_to_data(offer)):
-        return "Full remote"
+        return REMOTE_LABEL
     return None
 
 
-def build_send_queue(engine: Engine, profile: ProfileData, min_score: int = 0) -> list[QueueItem]:
+def build_send_queue(
+    engine: Engine,
+    profile: ProfileData,
+    min_score: int = 0,
+    priority_areas: Sequence[str] | None = None,
+) -> list[QueueItem]:
     """Offres à traiter : sans candidature suivie, non écartées, classées par pertinence.
 
-    Les offres marquées « Intéressante » passent devant, puis celles du sud de la France ou en
+    Les offres marquées « Intéressante » passent devant, puis celles d'une zone prioritaire ou en
     full remote, puis le score global décroissant.
     Une offre sous le seuil reste visible si elle a été marquée « Intéressante ».
     """
+    if priority_areas is None:
+        from src.services.job_watcher import load_watcher_config
+
+        priority_areas = load_watcher_config().priority_areas
     with Session(engine) as session:
         sent_offer_ids = set(
             session.scalars(
@@ -198,7 +210,7 @@ def build_send_queue(engine: Engine, profile: ProfileData, min_score: int = 0) -
                 score=score,
                 has_resume=offer.id in resume_offer_ids,
                 has_letter=offer.id in letter_offer_ids,
-                priority=offer_priority(offer, profile),
+                priority=offer_priority(offer, profile, priority_areas),
             )
         )
     items.sort(

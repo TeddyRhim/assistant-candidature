@@ -97,7 +97,6 @@ from src.services.job_offers import (
 )
 from src.services.job_sources.adzuna import (
     ADZUNA_MARKETS,
-    LOCAL_SEARCH_LOCATIONS,
     PROFILE_SEARCH_SKILL_LIMIT,
     JobSourceError,
     get_profile_search_status,
@@ -105,6 +104,7 @@ from src.services.job_sources.adzuna import (
     ordered_profile_terms,
     profile_search_keywords,
     rank_adzuna_results,
+    resolve_search_locations,
     start_profile_search,
 )
 from src.services.job_sources.base import SourceListing
@@ -355,7 +355,7 @@ def show_profile_form(engine: Engine, profile: ProfileData) -> None:
         locations = st.text_input(
             "Zone géographique locale (séparée par des virgules)",
             value=", ".join(profile.local_locations),
-            help="Par exemple : Nice, Cannes, Var",
+            help="Villes, départements ou régions, séparés par des virgules.",
         )
         remote_only_outside_local_area = st.checkbox(
             "Hors de cette zone, ne retenir que les postes entièrement en télétravail",
@@ -1050,14 +1050,16 @@ def _show_adzuna_search_tab(engine: Engine, profile: ProfileData) -> None:
             horizontal=True,
         )
         if search_scope == "Zone de recherche locale":
+            selected_locations = resolve_search_locations(
+                profile, load_watcher_config().adzuna_locations
+            )
+            zones = ", ".join(selected_locations) or "toute la France"
             st.caption(
-                "La recherche couvre Nice, Cannes, Mougins, Sophia Antipolis, Antibes, "
-                "Grasse, Cagnes-sur-Mer, Menton, le Var, Toulon, Marseille et Paris. "
-                "Les annonces des zones hors Paris seront classées avant celles de Paris ; "
+                f"Zones interrogées : {zones}. Elles se règlent dans la page Veille ou dans "
+                "la zone de ton profil. Les annonces de Paris sont classées après les autres ; "
                 "le score de correspondance les départage dans chaque groupe."
             )
             selected_countries = ["fr"]
-            selected_locations = list(LOCAL_SEARCH_LOCATIONS)
         else:
             st.caption(
                 "Adzuna ne propose pas une recherche continentale unique : sélectionne les "
@@ -1951,6 +1953,17 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             "Inclure la recherche France Travail (identifiants requis)",
             value=cfg.enable_france_travail,
         )
+        adzuna_zones_raw = st.text_input(
+            "Zones Adzuna (séparées par des virgules)",
+            value=", ".join(cfg.adzuna_locations),
+            help="Villes ou départements interrogés un par un. Vide : zone de ton profil.",
+        )
+        priority_raw = st.text_input(
+            "Zones prioritaires dans la file d'envoi (séparées par des virgules)",
+            value=", ".join(cfg.priority_areas),
+            help="Les offres de ces zones, et celles en full remote, passent en tête de la "
+            "file. Vide : zone de ton profil.",
+        )
         ft_departments = st.multiselect(
             "Départements France Travail",
             options=list(FRANCE_TRAVAIL_DEPARTMENT_NAMES),
@@ -1982,6 +1995,8 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             cfg.interval_seconds = interval_hours * 3600
             cfg.enable_adzuna = enable_adzuna
             cfg.enable_france_travail = enable_france_travail
+            cfg.adzuna_locations = [z.strip() for z in adzuna_zones_raw.split(",") if z.strip()]
+            cfg.priority_areas = [z.strip() for z in priority_raw.split(",") if z.strip()]
             cfg.france_travail_departments = ft_departments
             cfg.france_travail_cdi_only = ft_cdi_only
             cfg.auto_import = auto_import
@@ -2574,7 +2589,7 @@ def _company_form(
         location = st.text_input(
             "Ville / zone",
             value=company.location if company else "",
-            help="Exemples : Nice, Cannes, Toulon, Var",
+            help="Ville, département ou région.",
         )
         website_url = st.text_input(
             "Site internet (facultatif)",
@@ -2643,7 +2658,7 @@ def show_companies_page(engine: Engine, profile: ProfileData) -> None:
     filter_location = st.text_input(
         "Filtrer par ville ou zone",
         value="",
-        placeholder="Nice, Cannes, Var…",
+        placeholder="Ville, département…",
     )
     companies = list_companies(engine, filter_location or None)
     st.subheader(f"Entreprises enregistrées ({len(companies)})")

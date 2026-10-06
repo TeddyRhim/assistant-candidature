@@ -174,14 +174,15 @@ def test_run_watcher_cycle_imports_matching_and_skips_duplicates(tmp_path: Path)
     assert second_result.low_match_skipped == 1
 
 
-def test_default_exclusions_filter_lead_positions() -> None:
+def test_default_exclusions_are_neutral_and_configurable() -> None:
     from src.services.job_watcher import DEFAULT_EXCLUDED_TITLE_KEYWORDS
 
-    keywords = list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
-    assert find_excluded_keyword("Lead Dev SYMFONY Senior (IT)", keywords) == "lead"
-    assert find_excluded_keyword("Architecte / Lead PHP - CDI", keywords) == "lead"
-    assert find_excluded_keyword("Développeur PHP Symfony", keywords) is None
-    assert find_excluded_keyword("Développeur Leadership Tools", keywords) is None
+    defaults = list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
+    assert find_excluded_keyword("Stage - Développeur", defaults) == "stage"
+    assert find_excluded_keyword("Lead Developer", defaults) is None
+    # Les exclusions propres à une recherche viennent de la configuration locale.
+    assert find_excluded_keyword("Lead Developer", [*defaults, "lead"]) == "lead"
+    assert find_excluded_keyword("Développeur Leadership Tools", [*defaults, "lead"]) is None
 
 
 def test_find_excluded_keyword_matches_whole_words_only() -> None:
@@ -258,6 +259,7 @@ def _france_travail_listing() -> SourceListing:
 
 
 def _ft_cycle_config(**overrides: object) -> WatcherConfig:
+    overrides.setdefault("france_travail_departments", ["06", "83"])
     return WatcherConfig(
         enable_adzuna=False,
         min_match_percentage=40,
@@ -403,6 +405,7 @@ def test_adzuna_cycle_goes_zone_by_zone_and_resumes_after_rate_limit(
         enable_france_travail=False,
         min_match_percentage=0,
         auto_prepare_dossier=False,
+        adzuna_locations=["Lille", "Brest", "Dijon", "Tours"],
     )
     secrets = {"ADZUNA_APP_ID": "id", "ADZUNA_APP_KEY": "key"}
     visited: list[str] = []
@@ -428,5 +431,44 @@ def test_adzuna_cycle_goes_zone_by_zone_and_resumes_after_rate_limit(
         run_watcher_cycle(engine, _sample_profile(), config, secrets)
 
     # La seconde récupération reprend à la zone interrompue (3e), pas au début.
-    assert visited[0] == "Mougins"
-    assert "Nice" not in visited
+    assert visited[0] == "Dijon"
+    assert "Lille" not in visited
+
+
+def test_adzuna_cycle_falls_back_to_profile_zone_without_configuration(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("ASSISTANT_CANDIDATURES_DATA_DIR", str(tmp_path))
+    engine = create_database_engine(tmp_path / "db.sqlite3")
+    initialize_database(engine)
+    config = WatcherConfig(
+        enable_adzuna=True,
+        enable_france_travail=False,
+        auto_prepare_dossier=False,
+    )
+    profile = _sample_profile().model_copy(update={"local_locations": ["Lyon", "Rhône"]})
+    visited: list[str] = []
+
+    def record(_profile, _country, location, _id, _key):
+        visited.append(location)
+        return ProfileSearchResult(
+            listings=(), failed_targets=(), searched_targets=(location,), search_terms=()
+        )
+
+    with patch("src.services.job_watcher.search_adzuna_throttled", side_effect=record):
+        run_watcher_cycle(
+            engine, profile, config, {"ADZUNA_APP_ID": "id", "ADZUNA_APP_KEY": "key"}
+        )
+
+    assert visited == ["Lyon", "Rhône"]
+
+
+def test_cycle_reports_missing_france_travail_departments(tmp_path: Path) -> None:
+    engine = create_database_engine(tmp_path / "db.sqlite3")
+    initialize_database(engine)
+    config = WatcherConfig(enable_adzuna=False, enable_france_travail=True)
+
+    result = run_watcher_cycle(engine, _sample_profile(), config)
+
+    assert any("aucun département" in error for error in result.errors)
+    assert result.france_travail_scanned is False

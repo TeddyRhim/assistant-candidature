@@ -21,14 +21,11 @@ from src.models import JobOffer, JobOfferData, ProfileData
 from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import DuplicateOfferURL, create_offer
 from src.services.job_sources.adzuna import (
-    LOCAL_SEARCH_LOCATIONS,
     is_french_or_english,
+    resolve_search_locations,
     search_adzuna_throttled,
 )
 from src.services.job_sources.base import JobSourceError, SourceListing
-from src.services.job_sources.france_travail import (
-    DEFAULT_DEPARTMENTS as FRANCE_TRAVAIL_DEFAULT_DEPARTMENTS,
-)
 from src.services.job_sources.france_travail import search_france_travail_for_profile
 from src.services.job_sources.greenhouse import fetch_greenhouse_listings
 from src.services.job_sources.lever import fetch_lever_listings
@@ -40,7 +37,8 @@ PlatformType = Literal["greenhouse", "lever"]
 MIN_LANGUAGE_CHECK_CHARACTERS = 120
 FRANCE_TRAVAIL_WATCH_DAYS = 14  # fenêtre de publication interrogée à chaque cycle
 
-# Mots (entiers) du titre qui écartent une annonce : hors cible pour un CDI backend PHP.
+# Mots (entiers) du titre qui écartent une annonce. Valeurs neutres : les exclusions propres à ta
+# recherche se règlent dans la page Veille (enregistrées localement dans watcher_config.json).
 DEFAULT_EXCLUDED_TITLE_KEYWORDS = (
     "stage",
     "stagiaire",
@@ -49,10 +47,6 @@ DEFAULT_EXCLUDED_TITLE_KEYWORDS = (
     "apprenti",
     "apprentissage",
     "internship",
-    "freelance",
-    "java",
-    "angular",
-    "lead",
 )
 
 
@@ -82,9 +76,11 @@ class WatcherConfig(BaseModel):
     enable_adzuna: bool = True
     adzuna_countries: list[str] = Field(default_factory=lambda: ["fr"])
     enable_france_travail: bool = True
-    france_travail_departments: list[str] = Field(
-        default_factory=lambda: list(FRANCE_TRAVAIL_DEFAULT_DEPARTMENTS)
-    )
+    france_travail_departments: list[str] = Field(default_factory=list)
+    # Zones interrogées sur Adzuna ; vide = zone du profil. Réglées dans la page Veille.
+    adzuna_locations: list[str] = Field(default_factory=list)
+    # Zones remontées en tête de la file d'envoi ; vide = zone du profil.
+    priority_areas: list[str] = Field(default_factory=list)
     france_travail_cdi_only: bool = True
     min_match_percentage: int = Field(default=50, ge=0, le=100)
     excluded_title_keywords: list[str] = Field(
@@ -208,10 +204,11 @@ def run_watcher_cycle(
         app_id, app_key = get_adzuna_credentials(secrets)
         if app_id and app_key:
             result.adzuna_scanned = True
+            local_locations = resolve_search_locations(profile, cfg.adzuna_locations) or [""]
             adzuna_targets = [
                 (country, location)
                 for country in cfg.adzuna_countries
-                for location in (LOCAL_SEARCH_LOCATIONS if country == "fr" else ("",))
+                for location in (local_locations if country == "fr" else ("",))
             ]
             start = _load_adzuna_cursor(len(adzuna_targets))
             next_cursor = 0
@@ -238,7 +235,9 @@ def run_watcher_cycle(
             _save_adzuna_cursor(next_cursor)
 
     # 3. Collecte France Travail (si activée et identifiants disponibles)
-    if cfg.enable_france_travail:
+    if cfg.enable_france_travail and not cfg.france_travail_departments:
+        result.errors.append("France Travail : aucun département configuré (page Veille).")
+    elif cfg.enable_france_travail:
         client_id, client_secret = get_france_travail_credentials(secrets)
         if client_id and client_secret:
             result.france_travail_scanned = True

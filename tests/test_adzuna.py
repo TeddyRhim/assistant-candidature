@@ -11,7 +11,6 @@ import pytest
 from src.models import ProfileData, SkillRating
 from src.services.job_sources.adzuna import (
     ADZUNA_MARKETS,
-    LOCAL_SEARCH_LOCATIONS,
     AdzunaRateLimited,
     JobSourceError,
     ProfileSearchResult,
@@ -22,6 +21,7 @@ from src.services.job_sources.adzuna import (
     ordered_profile_terms,
     profile_search_keywords,
     rank_adzuna_results,
+    resolve_search_locations,
     search_adzuna,
     search_adzuna_for_profile,
     search_adzuna_throttled,
@@ -297,15 +297,16 @@ def test_profile_search_limits_distinct_skill_queries_to_top_eight() -> None:
     )
 
 
-def test_local_search_locations_cover_requested_cities_and_region_priority() -> None:
-    assert {
-        "Marseille",
-        "Toulon",
-        "Mougins",
-        "Sophia Antipolis",
-        "Nice",
-        "Cannes",
-    }.issubset(LOCAL_SEARCH_LOCATIONS)
+def test_search_locations_come_from_configuration_then_profile() -> None:
+    profile = ProfileData(local_locations=["Lyon", "Rhône"])
+
+    assert resolve_search_locations(profile, ["Lille", " Brest "]) == ["Lille", "Brest"]
+    assert resolve_search_locations(profile, []) == ["Lyon", "Rhône"]
+    assert resolve_search_locations(profile, None) == ["Lyon", "Rhône"]
+    assert resolve_search_locations(ProfileData(), []) == []
+
+
+def test_local_search_prioritizes_non_paris_in_region_priority() -> None:
     non_paris = SourceListing(
         source_id="nice",
         source_name="Adzuna",
