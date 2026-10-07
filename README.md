@@ -6,6 +6,12 @@ Tout reste sur la machine : base SQLite, CV, lettres et exports. Rien n'est envo
 
 ## Aperçu
 
+Captures réalisées avec un profil et des offres d'exemple (aucune donnée personnelle).
+
+| Suivi des candidatures | Offres classées par correspondance |
+| --- | --- |
+| ![Suivi des candidatures](docs/screenshots/suivi-candidatures.jpg) | ![Offres enregistrées](docs/screenshots/offres.jpg) |
+
 ```mermaid
 flowchart LR
     A[Sources d'offres] --> B[Veille]
