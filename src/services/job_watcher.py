@@ -74,6 +74,86 @@ def find_excluded_keyword(title: str, keywords: list[str]) -> str | None:
     return None
 
 
+# Rôles hors développement : écartés sauf si le titre dit aussi « développeur ». Un « * » final
+# accepte toute fin de mot (« technicien* » couvre technicienne). Réglable dans la page Veille.
+DEFAULT_NON_DEV_TITLE_KEYWORDS = (
+    "technicien*",
+    "support",
+    "assistant*",
+    "administrat*",
+    "chef de proj*",
+    "project manager",
+    "product owner",
+    "product manager",
+    "scrum master",
+    "consultant fonctionnel*",
+    "business analyst",
+    "analyste*",
+    "coordinat*",
+    "commercial",
+    "recruteu*",
+    "comptable",
+    "testeur*",
+    "tester",
+    "qa",
+)
+
+# Mots qui montrent que le poste est bien un poste de développement (comparés sans accents).
+_DEV_TITLE_WORDS = (
+    "developpeur",
+    "developpeuse",
+    "developer",
+    "developpement",
+    "development",
+    "dev",
+    "programmeur",
+    "software engineer",
+    "ingenieur logiciel",
+    "ingenieur developpement",
+    "fullstack",
+    "full stack",
+    "backend",
+    "back end",
+    "frontend",
+    "front end",
+)
+
+
+def _plain(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    stripped = "".join(char for char in folded if not unicodedata.combining(char))
+    return " " + re.sub(r"[^a-z0-9*]+", " ", stripped).strip() + " "
+
+
+def _contains_words(plain_title: str, phrase: str) -> bool:
+    return f" {phrase} " in plain_title
+
+
+def find_non_dev_keyword(title: str, keywords: list[str]) -> str | None:
+    """Mot de rôle hors développement présent dans un titre qui ne parle pas de développeur."""
+    plain_title = _plain(title)
+    if any(_contains_words(plain_title, word) for word in _DEV_TITLE_WORDS):
+        return None
+    for keyword in keywords:
+        phrase = _plain(keyword).strip()
+        if not phrase:
+            continue
+        if phrase.endswith("*"):
+            if re.search(rf"(?<![a-z0-9]){re.escape(phrase[:-1])}", plain_title):
+                return keyword.strip()
+        elif _contains_words(plain_title, phrase):
+            return keyword.strip()
+    return None
+
+
+def is_title_excluded(title: str, config: WatcherConfig) -> bool:
+    """Vrai si le titre contient un mot exclu ou désigne un rôle hors développement."""
+    return bool(
+        find_excluded_keyword(title, config.excluded_title_keywords)
+        or find_non_dev_keyword(title, config.non_dev_title_keywords)
+    )
+
+
 class MonitoredTarget(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -98,6 +178,9 @@ class WatcherConfig(BaseModel):
     priority_areas: list[str] = Field(default_factory=list)
     france_travail_cdi_only: bool = True
     min_match_percentage: int = Field(default=50, ge=0, le=100)
+    non_dev_title_keywords: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_NON_DEV_TITLE_KEYWORDS)
+    )
     excluded_title_keywords: list[str] = Field(
         default_factory=lambda: list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
     )
@@ -350,7 +433,7 @@ def run_watcher_cycle(
                 source=listing.source_name,
                 description=listing.description or "Sans description fournie.",
             )
-            if find_excluded_keyword(temp_offer.title, cfg.excluded_title_keywords):
+            if is_title_excluded(temp_offer.title, cfg):
                 result.excluded_skipped += 1
                 continue
             if listing.contract_type in cfg.excluded_contract_types:

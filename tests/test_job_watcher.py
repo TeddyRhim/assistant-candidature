@@ -472,3 +472,83 @@ def test_cycle_reports_missing_france_travail_departments(tmp_path: Path) -> Non
 
     assert any("aucun département" in error for error in result.errors)
     assert result.france_travail_scanned is False
+
+
+def test_non_dev_titles_are_excluded_unless_they_say_developer() -> None:
+    from src.services.job_watcher import DEFAULT_NON_DEV_TITLE_KEYWORDS, find_non_dev_keyword
+
+    keywords = list(DEFAULT_NON_DEV_TITLE_KEYWORDS)
+    for title in (
+        "Technicien Support Informatique H/F",
+        "Technicienne de maintenance",
+        "Chef de Projet Technique Javascript H/F",
+        "Chef de Proje IT - Métiers",
+        "Consultant Fonctionnel Oracle EBS Finance H/F",
+        "Product Owner confirmé",
+        "Executive Assistant to C-Suite",
+        "Senior QA Engineer",
+        "Tester",
+        "Administrateur Systèmes Réseaux",
+    ):
+        assert find_non_dev_keyword(title, keywords), title
+
+    for title in (
+        "Développeur PHP Symfony H/F",
+        "Technicien Systèmes Numériques - Développeur Informatique H/F",
+        "Chef de projet et développeur full stack",
+        "Backend Engineer (support tooling)",
+        "Software Engineer - QA Automation",
+        "Developpeur Python",
+        "DevOps H/F",
+        "Ingénieur logiciel embarqué",
+        "Qatar Airways Software Engineer",
+    ):
+        assert find_non_dev_keyword(title, keywords) is None, title
+
+
+def test_non_dev_keywords_are_configurable_and_empty_list_disables_the_filter() -> None:
+    from src.services.job_watcher import find_non_dev_keyword, is_title_excluded
+
+    assert find_non_dev_keyword("Responsable paie", ["responsable"]) == "responsable"
+    assert find_non_dev_keyword("Responsable paie", []) is None
+    config = WatcherConfig(non_dev_title_keywords=[], excluded_title_keywords=[])
+    assert is_title_excluded("Technicien Support", config) is False
+    assert is_title_excluded("Technicien Support", WatcherConfig(excluded_title_keywords=[]))
+
+
+def test_cycle_skips_non_dev_titles(tmp_path: Path) -> None:
+    engine = create_database_engine(tmp_path / "db.sqlite3")
+    initialize_database(engine)
+    profile = _sample_profile()
+    dev = SourceListing(
+        source_id="d",
+        source_name="Greenhouse (X)",
+        title="Développeur Backend PHP Symfony",
+        company="Atelier Tech",
+        location="Nice",
+        original_url=AnyHttpUrl("https://boards.greenhouse.io/x/jobs/1"),
+        description="PHP Symfony API REST SQL.",
+    )
+    tech = SourceListing(
+        source_id="t",
+        source_name="Greenhouse (X)",
+        title="Technicien Support Informatique PHP",
+        company="Atelier Tech",
+        location="Nice",
+        original_url=AnyHttpUrl("https://boards.greenhouse.io/x/jobs/2"),
+        description="PHP Symfony API REST SQL.",
+    )
+    config = WatcherConfig(
+        targets=[MonitoredTarget(platform="greenhouse", target="x")],
+        enable_adzuna=False,
+        enable_france_travail=False,
+        min_match_percentage=0,
+        auto_prepare_dossier=False,
+        excluded_title_keywords=[],
+    )
+
+    with patch("src.services.job_watcher.fetch_greenhouse_listings", return_value=[dev, tech]):
+        result = run_watcher_cycle(engine, profile, config)
+
+    assert result.new_offers_imported == 1
+    assert result.excluded_skipped == 1

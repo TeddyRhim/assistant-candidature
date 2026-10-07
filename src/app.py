@@ -154,8 +154,8 @@ from src.services.job_sources.lever import (
 from src.services.job_titles import extract_job_role
 from src.services.job_watcher import (
     MonitoredTarget,
-    find_excluded_keyword,
     get_global_watcher,
+    is_title_excluded,
     load_watcher_config,
     run_watcher_cycle,
     save_watcher_config,
@@ -1458,7 +1458,7 @@ def _show_france_travail_tab(engine: Engine, profile: ProfileData) -> None:
         item
         for score, item in scored
         if score >= watcher_cfg.min_match_percentage
-        and not find_excluded_keyword(item.title, watcher_cfg.excluded_title_keywords)
+        and not is_title_excluded(item.title, watcher_cfg)
     ]
     if importable and st.button(
         f"Importer les {len(importable)} offre(s) au-dessus du seuil "
@@ -1962,6 +1962,12 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             value=", ".join(cfg.excluded_title_keywords),
             help="Une annonce dont le titre contient l'un de ces mots entiers est ignorée.",
         )
+        non_dev_raw = st.text_input(
+            "Rôles hors développement à écarter (séparés par des virgules)",
+            value=", ".join(cfg.non_dev_title_keywords),
+            help="Écartés sauf si le titre contient aussi « développeur », « developer », "
+            "« backend »… Un * final accepte toute fin de mot (technicien*).",
+        )
         freq_options = [1, 2, 4, 8, 24]
         cur_hours = max(1, cfg.interval_seconds // 3600)
         cur_index = freq_options.index(cur_hours) if cur_hours in freq_options else 0
@@ -2052,6 +2058,9 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             cfg.min_match_percentage = min_score
             cfg.excluded_title_keywords = [
                 word.strip() for word in excluded_raw.split(",") if word.strip()
+            ]
+            cfg.non_dev_title_keywords = [
+                word.strip() for word in non_dev_raw.split(",") if word.strip()
             ]
             cfg.interval_seconds = interval_hours * 3600
             cfg.enable_adzuna = enable_adzuna
