@@ -147,4 +147,4 @@ def test_tailored_resume_and_filename_use_the_role() -> None:
     )
 
     assert draft["target_role"] == "Développeur PHP"
-    assert filename == "alexandre-martin-cv-developpeur-php-symfony-atelier-exemple.pdf"
+    assert filename == "alexandre-martin-cv-developpeur-php-symfony.pdf"

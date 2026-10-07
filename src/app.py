@@ -1973,6 +1973,25 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             ],
             format_func=lambda code: f"{code} — {FRANCE_TRAVAIL_DEPARTMENT_NAMES[code]}",
         )
+        enable_himalayas = st.checkbox(
+            "Inclure Himalayas (offres en télétravail, en anglais)",
+            value=cfg.enable_himalayas,
+        )
+        enable_remoteok = st.checkbox(
+            "Inclure Remote OK (offres en télétravail, en anglais)",
+            value=cfg.enable_remoteok,
+        )
+        excluded_contracts = st.multiselect(
+            "Types de contrat écartés",
+            options=["Stage", "Alternance", "Freelance", "CDD"],
+            default=[
+                c
+                for c in cfg.excluded_contract_types
+                if c in ("Stage", "Alternance", "Freelance", "CDD")
+            ],
+            help="Appliqué quand la source indique le type de contrat. Les mots exclus du "
+            "titre complètent ce filtre.",
+        )
         ft_cdi_only = st.checkbox(
             "France Travail : CDI uniquement",
             value=cfg.france_travail_cdi_only,
@@ -1998,6 +2017,9 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             cfg.adzuna_locations = [z.strip() for z in adzuna_zones_raw.split(",") if z.strip()]
             cfg.priority_areas = [z.strip() for z in priority_raw.split(",") if z.strip()]
             cfg.france_travail_departments = ft_departments
+            cfg.enable_himalayas = enable_himalayas
+            cfg.enable_remoteok = enable_remoteok
+            cfg.excluded_contract_types = excluded_contracts
             cfg.france_travail_cdi_only = ft_cdi_only
             cfg.auto_import = auto_import
             cfg.auto_prepare_dossier = auto_prepare_dossier

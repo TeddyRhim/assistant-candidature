@@ -15,7 +15,6 @@
 
   header { text-align: center; margin-bottom: 8pt; }
   header h1 { font-size: 24pt; font-weight: 800; margin: 0 0 3pt 0; text-transform: uppercase; }
-  .target-company { font-size: 8pt; color: var(--muted); margin-bottom: 2pt; }
   .contact { font-size: 8pt; color: var(--muted); }
   .contact .sep { margin: 0 4pt; }
 
@@ -37,7 +36,6 @@
 
 <header>
   <h1>{{ name }}</h1>
-  {% if target_company %}<div class="target-company">{{ target_company }}</div>{% endif %}
   <div class="contact">
     {%- for c in contact -%}
       {%- if not loop.first %}<span class="sep">|</span>{% endif -%}

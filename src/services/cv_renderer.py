@@ -96,7 +96,11 @@ def tailored_cv_filename(
     target_role: str = "",
     target_company: str = "",
 ) -> str:
-    """Build a readable, stable PDF filename from candidate and job details."""
+    """Build a readable, stable PDF filename from candidate and job details.
+
+    Le nom de l'entreprise visée n'apparaît jamais dans le fichier : un CV retrouvé par un tiers ne
+    doit pas révéler où le candidat postule. `target_company` est accepté pour compatibilité.
+    """
 
     def slug(value: str) -> str:
         normalized = unicodedata.normalize("NFKD", value)
@@ -107,7 +111,6 @@ def tailored_cv_filename(
         slug(str(data.get("name", "")))[:40],
         "cv",
         slug(extract_job_role(target_role))[:48],
-        slug(target_company)[:36],
     ]
     return "-".join(piece for piece in pieces if piece) + ".pdf"
 

@@ -15,3 +15,13 @@ def _use_example_base_cv(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> N
         cv_renderer.BASE_CV_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8"
     )
     monkeypatch.setattr(cv_renderer, "BASE_CV_PATH", destination)
+
+
+@pytest.fixture(autouse=True)
+def _no_remote_board_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """La veille n'appelle jamais Himalayas ni Remote OK pendant les tests, sauf mock explicite."""
+    from src.services import job_watcher
+    from src.services.job_sources.remote_common import RemoteBoardResult
+
+    monkeypatch.setattr(job_watcher, "search_himalayas", lambda terms: RemoteBoardResult())
+    monkeypatch.setattr(job_watcher, "search_remoteok", lambda terms: RemoteBoardResult())

@@ -83,7 +83,7 @@ def test_tailored_cv_filename_is_descriptive_and_stable() -> None:
         target_company="Équipe Exemple",
     )
 
-    assert filename == "alexandre-martin-cv-developpeur-php-symfony-equipe-exemple.pdf"
+    assert filename == "alexandre-martin-cv-developpeur-php-symfony.pdf"
     assert tailored_cv_filename(
         data,
         target_role="Développeur PHP / Symfony",

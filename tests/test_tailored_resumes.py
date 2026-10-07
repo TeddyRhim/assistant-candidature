@@ -63,7 +63,8 @@ def test_tailored_resume_pdf_contains_customized_content() -> None:
     assert pages
     extracted_text = " ".join(pages[0].extract_text().casefold().split())
     assert "alexandre martin" in extracted_text
-    assert "exemple" in extracted_text
+    # Le nom de l'entreprise visée ne figure jamais dans le PDF.
+    assert "exemple" not in extracted_text.replace("example.com", "")
     assert "compétences php et api." in extracted_text
 
 
@@ -79,7 +80,7 @@ def test_tailored_resume_pdf_uses_json_skill_data() -> None:
     assert "symfony" in extracted_text
 
 
-def test_tailored_resume_pdf_uses_company_without_location_or_offer_link() -> None:
+def test_tailored_resume_pdf_omits_company_location_and_offer_link() -> None:
     offer = JobOfferData(
         title="Développeur backend",
         company="Atelier Exemple",
@@ -104,7 +105,7 @@ def test_tailored_resume_pdf_uses_company_without_location_or_offer_link() -> No
         for page in pages
     )
 
-    assert "atelier exemple" in extracted_text
+    assert "atelier exemple" not in extracted_text
     assert "paris" not in extracted_text
     assert "php" in extracted_text
     assert "développement d'api php." in extracted_text

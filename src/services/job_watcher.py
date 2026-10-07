@@ -28,7 +28,10 @@ from src.services.job_sources.adzuna import (
 from src.services.job_sources.base import JobSourceError, SourceListing
 from src.services.job_sources.france_travail import search_france_travail_for_profile
 from src.services.job_sources.greenhouse import fetch_greenhouse_listings
+from src.services.job_sources.himalayas import search_himalayas
 from src.services.job_sources.lever import fetch_lever_listings
+from src.services.job_sources.remote_common import remote_search_terms
+from src.services.job_sources.remoteok import search_remoteok
 from src.services.matching import assess_offer_fit
 
 logger = logging.getLogger(__name__)
@@ -85,6 +88,13 @@ class WatcherConfig(BaseModel):
     min_match_percentage: int = Field(default=50, ge=0, le=100)
     excluded_title_keywords: list[str] = Field(
         default_factory=lambda: list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
+    )
+    # Sources de télétravail (API publiques sans clé).
+    enable_himalayas: bool = True
+    enable_remoteok: bool = True
+    # Types de contrat écartés quand la source les indique (stage, alternance, freelance).
+    excluded_contract_types: list[str] = Field(
+        default_factory=lambda: ["Stage", "Alternance", "Freelance"]
     )
     auto_import: bool = True
     auto_prepare_dossier: bool = True
@@ -256,9 +266,26 @@ def run_watcher_cycle(
             except Exception as error:
                 result.errors.append(f"France Travail: {error}")
 
+    # 4. Collecte des sites de télétravail (Himalayas, Remote OK), un mot-clé à la fois.
+    remote_terms = remote_search_terms(profile)
+    if remote_terms:
+        for enabled, search in (
+            (cfg.enable_himalayas, search_himalayas),
+            (cfg.enable_remoteok, search_remoteok),
+        ):
+            if not enabled:
+                continue
+            try:
+                board = search(remote_terms)
+            except Exception as error:
+                result.errors.append(f"Télétravail : {error}")
+                continue
+            collected_listings.extend(board.listings)
+            result.errors.extend(board.errors)
+
     result.total_listings_found = len(collected_listings)
 
-    # 4. Filtrage, déduplication et import en base
+    # 5. Filtrage, déduplication et import en base
     with Session(engine) as session:
         known_keys = {
             offer_identity_key(title, company, location)
@@ -288,6 +315,9 @@ def run_watcher_cycle(
                 description=listing.description or "Sans description fournie.",
             )
             if find_excluded_keyword(temp_offer.title, cfg.excluded_title_keywords):
+                result.excluded_skipped += 1
+                continue
+            if listing.contract_type in cfg.excluded_contract_types:
                 result.excluded_skipped += 1
                 continue
 
