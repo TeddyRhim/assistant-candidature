@@ -16,7 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from src.config import get_adzuna_credentials, get_data_dir, get_france_travail_credentials
+from src.config import (
+    get_adzuna_credentials,
+    get_data_dir,
+    get_france_travail_credentials,
+    get_jooble_api_key,
+)
 from src.models import JobOffer, JobOfferData, ProfileData
 from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import DuplicateOfferURL, create_offer
@@ -28,16 +33,23 @@ from src.services.job_sources.adzuna import (
 from src.services.job_sources.base import JobSourceError, SourceListing
 from src.services.job_sources.france_travail import search_france_travail_for_profile
 from src.services.job_sources.greenhouse import fetch_greenhouse_listings
-from src.services.job_sources.himalayas import search_himalayas
+from src.services.job_sources.himalayas import HIMALAYAS_SOURCE_NAME, search_himalayas
+from src.services.job_sources.jooble import (
+    JOOBLE_MAX_REQUESTS_PER_RUN,
+    JOOBLE_TERM_LIMIT,
+    search_jooble,
+)
 from src.services.job_sources.lever import fetch_lever_listings
 from src.services.job_sources.remote_common import remote_search_terms
-from src.services.job_sources.remoteok import search_remoteok
-from src.services.matching import assess_offer_fit
+from src.services.job_sources.remoteok import REMOTEOK_SOURCE_NAME, search_remoteok
+from src.services.matching import assess_offer_fit, title_mentions_profile_technology
 
 logger = logging.getLogger(__name__)
 
 PlatformType = Literal["greenhouse", "lever"]
 MIN_LANGUAGE_CHECK_CHARACTERS = 120
+# Ces sites listent tout le télétravail : le titre doit citer une technologie du profil.
+REMOTE_SOURCE_NAMES = frozenset({HIMALAYAS_SOURCE_NAME, REMOTEOK_SOURCE_NAME})
 FRANCE_TRAVAIL_WATCH_DAYS = 14  # fenêtre de publication interrogée à chaque cycle
 
 # Mots (entiers) du titre qui écartent une annonce. Valeurs neutres : les exclusions propres à ta
@@ -89,6 +101,10 @@ class WatcherConfig(BaseModel):
     excluded_title_keywords: list[str] = Field(
         default_factory=lambda: list(DEFAULT_EXCLUDED_TITLE_KEYWORDS)
     )
+    # Jooble : agrégateur à clé limitée (500 requêtes) ; le plafond par passage protège le quota.
+    enable_jooble: bool = True
+    jooble_locations: list[str] = Field(default_factory=list)  # vide = zone du profil
+    jooble_max_requests_per_run: int = Field(default=JOOBLE_MAX_REQUESTS_PER_RUN, ge=1, le=50)
     # Sources de télétravail (API publiques sans clé).
     enable_himalayas: bool = True
     enable_remoteok: bool = True
@@ -266,6 +282,26 @@ def run_watcher_cycle(
             except Exception as error:
                 result.errors.append(f"France Travail: {error}")
 
+    # 3 bis. Collecte Jooble (si activée et clé disponible), dans la limite du quota.
+    jooble_key = get_jooble_api_key(secrets)
+    if cfg.enable_jooble and jooble_key:
+        jooble_terms = remote_search_terms(profile, limit=JOOBLE_TERM_LIMIT)
+        jooble_zones = cfg.jooble_locations or [
+            zone.strip() for zone in profile.local_locations if zone.strip()
+        ]
+        try:
+            jooble = search_jooble(
+                jooble_key,
+                jooble_terms,
+                jooble_zones or [""],
+                max_requests=cfg.jooble_max_requests_per_run,
+            )
+        except Exception as error:
+            result.errors.append(f"Jooble : {error}")
+        else:
+            collected_listings.extend(jooble.listings)
+            result.errors.extend(jooble.errors)
+
     # 4. Collecte des sites de télétravail (Himalayas, Remote OK), un mot-clé à la fois.
     remote_terms = remote_search_terms(profile)
     if remote_terms:
@@ -318,6 +354,11 @@ def run_watcher_cycle(
                 result.excluded_skipped += 1
                 continue
             if listing.contract_type in cfg.excluded_contract_types:
+                result.excluded_skipped += 1
+                continue
+            if listing.source_name in REMOTE_SOURCE_NAMES and not (
+                title_mentions_profile_technology(listing.title, profile)
+            ):
                 result.excluded_skipped += 1
                 continue
 

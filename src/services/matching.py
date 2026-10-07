@@ -257,17 +257,43 @@ def mentions_technology(text: str) -> bool:
     return any(_find_technology_evidence(text, technology) for technology in TECHNOLOGIES)
 
 
+_AMOUNT_BEFORE = re.compile(r"(?:\d{1,3}(?:[,.]\d{3})+|\d{4,}|\d+\s*[kKmM])\s*$")
+_AMOUNT_AFTER = re.compile(
+    r"\s*(?:\d{1,3}(?:[,.]\d{3})+|\d{4,}|\d+(?:[.,]\d+)?\s*[kKmM](?!\w)"
+    r"|[\d.,]+\s*(?:per\s|a\s+(?:month|year)|monthly))"
+)
+
+
+def _is_php_currency(alias: str, line: str, match: re.Match[str]) -> bool:
+    """« PHP » est aussi le code du peso philippin : « PHP 50,000 » n'est pas le langage."""
+    if alias.casefold() != "php":
+        return False
+    return bool(
+        _AMOUNT_BEFORE.search(line[: match.start()]) or _AMOUNT_AFTER.match(line[match.end() :])
+    )
+
+
 def _find_technology_evidence(text: str, technology: Technology) -> str | None:
     for line in text.splitlines():
         for alias in technology.aliases:
             phrase = r"\s+".join(re.escape(part) for part in alias.split())
             # « node.js » ne doit pas compter comme « js » : on exclut les points collés.
-            match = re.search(rf"(?<![\w.#+]){phrase}(?![\w#+])", line, re.IGNORECASE)
-            if match is not None:
+            for match in re.finditer(rf"(?<![\w.#+]){phrase}(?![\w#+])", line, re.IGNORECASE):
+                if _is_php_currency(alias, line, match):
+                    continue
                 start = max(0, match.start() - 50)
                 end = min(len(line), match.end() + 50)
                 return line[start:end].strip()
     return None
+
+
+def title_mentions_profile_technology(title: str, profile: ProfileData) -> bool:
+    """Vrai si le titre cite une technologie du catalogue que le profil maîtrise (niveau > 0)."""
+    return any(
+        _find_technology_evidence(title, technology) is not None
+        and _technology_level(technology, profile) > 0
+        for technology in TECHNOLOGIES
+    )
 
 
 def _requirements_coverage(
@@ -469,8 +495,9 @@ def _find_evidence(description: str, skill_name: str) -> str | None:
         for alias in aliases:
             phrase = r"\s+".join(re.escape(part) for part in alias.split())
             pattern = re.compile(rf"(?<!\w){phrase}(?!\w)", re.IGNORECASE)
-            match = pattern.search(line)
-            if match is not None:
+            for match in pattern.finditer(line):
+                if _is_php_currency(alias, line, match):
+                    continue
                 start = max(0, match.start() - 50)
                 end = min(len(line), match.end() + 50)
                 excerpt = line[start:end].strip()

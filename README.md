@@ -63,6 +63,7 @@ La page **Réglages** indique quelles clés sont présentes, sans jamais les aff
 | --- | --- |
 | Adzuna | API avec clés |
 | France Travail | API officielle avec compte |
+| Jooble | Agrégateur d'offres (clé gratuite, quota limité : le nombre de requêtes est compté et plafonné) |
 | Himalayas et Remote OK | API publiques d'offres en télétravail, sans clé (le lien et le nom de la source sont conservés) |
 | Greenhouse et Lever | API publiques des pages carrières d'entreprises |
 | La Bonne Boîte et registre public | Découverte d'entreprises |

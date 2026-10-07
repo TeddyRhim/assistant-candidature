@@ -34,6 +34,8 @@ UNKNOWN_COMPANY_NAME = "Entreprise non précisée"
 UNKNOWN_LOCATION = "Lieu non précisé"
 PRIORITY_AREA_LABEL = "Zone prioritaire"
 REMOTE_LABEL = "Full remote"
+# La zone prioritaire passe avant le full remote, qui passe avant le reste.
+_PRIORITY_RANK = {PRIORITY_AREA_LABEL: 2, REMOTE_LABEL: 1}
 
 
 # Adzuna coupe ses extraits à 500 caractères : une description de cette longueur est suspecte.
@@ -171,8 +173,8 @@ def build_send_queue(
 ) -> list[QueueItem]:
     """Offres à traiter : sans candidature suivie, non écartées, classées par pertinence.
 
-    Les offres marquées « Intéressante » passent devant, puis celles d'une zone prioritaire ou en
-    full remote, puis le score global décroissant.
+    Les offres marquées « Intéressante » passent devant, puis celles d'une zone prioritaire, puis
+    celles en full remote, puis le score global décroissant.
     Une offre sous le seuil reste visible si elle a été marquée « Intéressante ».
     """
     if priority_areas is None:
@@ -216,7 +218,7 @@ def build_send_queue(
     items.sort(
         key=lambda item: (
             item.offer.status == "Intéressante",
-            item.priority is not None,
+            _PRIORITY_RANK.get(item.priority or "", 0),
             item.score,
         ),
         reverse=True,

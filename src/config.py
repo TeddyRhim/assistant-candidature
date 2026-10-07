@@ -10,6 +10,7 @@ ADZUNA_APP_ID_ENV = "ADZUNA_APP_ID"
 ADZUNA_APP_KEY_ENV = "ADZUNA_APP_KEY"
 FRANCE_TRAVAIL_CLIENT_ID_ENV = "FRANCE_TRAVAIL_CLIENT_ID"
 FRANCE_TRAVAIL_CLIENT_SECRET_ENV = "FRANCE_TRAVAIL_CLIENT_SECRET"
+JOOBLE_API_KEY_ENV = "JOOBLE_API_KEY"
 MAILJET_API_KEY_ENV = "MAILJET_API_KEY"
 MAILJET_API_SECRET_ENV = "MAILJET_API_SECRET"
 MAILJET_FROM_EMAIL_ENV = "MAILJET_FROM_EMAIL"
@@ -56,6 +57,12 @@ def get_france_travail_credentials(
         FRANCE_TRAVAIL_CLIENT_SECRET_ENV, ""
     )
     return str(client_id).strip(), str(client_secret).strip()
+
+
+def get_jooble_api_key(secrets: Mapping[str, object] | None = None) -> str:
+    configured = secrets or {}
+    key = os.environ.get(JOOBLE_API_KEY_ENV, "") or configured.get(JOOBLE_API_KEY_ENV, "")
+    return str(key).strip()
 
 
 def get_mailjet_settings(

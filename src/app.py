@@ -16,6 +16,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from src.config import (
     get_adzuna_credentials,
     get_france_travail_credentials,
+    get_jooble_api_key,
     get_mailjet_settings,
 )
 from src.db import (
@@ -143,6 +144,8 @@ from src.services.job_sources.greenhouse import (
     extract_greenhouse_board_token,
     fetch_greenhouse_listings,
 )
+from src.services.job_sources.jooble import load_usage as load_jooble_usage
+from src.services.job_sources.jooble import reset_usage as reset_jooble_usage
 from src.services.job_sources.lever import (
     LEVER_DESCRIPTOR,
     extract_lever_site_slug,
@@ -929,6 +932,7 @@ def _source_secrets() -> dict[str, object]:
         return {
             "ADZUNA_APP_ID": st.secrets.get("ADZUNA_APP_ID", ""),
             "ADZUNA_APP_KEY": st.secrets.get("ADZUNA_APP_KEY", ""),
+            "JOOBLE_API_KEY": st.secrets.get("JOOBLE_API_KEY", ""),
             **_france_travail_secrets(),
         }
     except StreamlitSecretNotFoundError:
@@ -978,6 +982,13 @@ def show_settings_page() -> None:
             (FRANCE_TRAVAIL_SCOPE, FRANCE_TRAVAIL_FALLBACK_SCOPE),
             "Offres avec texte complet (l'accès à l'API se demande sur francetravail.io).",
         ),
+        (
+            "Jooble",
+            "jooble",
+            bool(get_jooble_api_key(secrets)),
+            None,
+            "Agrégateur d'offres (HelloWork, Free-Work…), clé limitée à 500 requêtes.",
+        ),
         ("Mailjet", "mailjet", mailjet_ready, None, "Envoi d'e-mails depuis l'application."),
     ]
     for label, key, configured, scopes, description in sources:
@@ -995,6 +1006,20 @@ def show_settings_page() -> None:
             result = st.session_state.get(f"check_result_{key}")
             if result is not None:
                 (st.success if result[0] else st.warning)(result[1])
+            if key == "jooble" and configured:
+                usage = load_jooble_usage()
+                st.caption(
+                    f"{usage.used} / {usage.limit} requêtes comptées, dont une réserve de "
+                    f"{usage.reserve} jamais utilisée par la veille. Il en reste "
+                    f"{usage.remaining} pour elle."
+                )
+                if st.button(
+                    "Remettre le compteur à zéro",
+                    key="reset_jooble_usage",
+                    help="À faire seulement si Jooble remet le quota à zéro.",
+                ):
+                    reset_jooble_usage()
+                    st.rerun()
     st.caption(
         "Les valeurs des clés ne sont jamais affichées. Le test de connexion demande seulement "
         "un jeton d'accès, sans lancer de recherche."
@@ -1828,6 +1853,7 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             secrets = {
                 "ADZUNA_APP_ID": st.secrets.get("ADZUNA_APP_ID", ""),
                 "ADZUNA_APP_KEY": st.secrets.get("ADZUNA_APP_KEY", ""),
+                "JOOBLE_API_KEY": st.secrets.get("JOOBLE_API_KEY", ""),
                 **_france_travail_secrets(),
             }
         except StreamlitSecretNotFoundError:
@@ -1973,6 +1999,22 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             ],
             format_func=lambda code: f"{code} — {FRANCE_TRAVAIL_DEPARTMENT_NAMES[code]}",
         )
+        enable_jooble = st.checkbox(
+            "Inclure Jooble (clé limitée à 500 requêtes)",
+            value=cfg.enable_jooble,
+        )
+        jooble_zones_raw = st.text_input(
+            "Zones Jooble (séparées par des virgules)",
+            value=", ".join(cfg.jooble_locations),
+            help="Une requête par technologie et par zone. Vide : zone de ton profil.",
+        )
+        jooble_per_run = st.number_input(
+            "Jooble : requêtes maximum par passage",
+            min_value=1,
+            max_value=50,
+            value=cfg.jooble_max_requests_per_run,
+            help="Chaque passage ne dépasse jamais ce nombre ; le quota total est suivi à part.",
+        )
         enable_himalayas = st.checkbox(
             "Inclure Himalayas (offres en télétravail, en anglais)",
             value=cfg.enable_himalayas,
@@ -2017,6 +2059,9 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
             cfg.adzuna_locations = [z.strip() for z in adzuna_zones_raw.split(",") if z.strip()]
             cfg.priority_areas = [z.strip() for z in priority_raw.split(",") if z.strip()]
             cfg.france_travail_departments = ft_departments
+            cfg.enable_jooble = enable_jooble
+            cfg.jooble_locations = [z.strip() for z in jooble_zones_raw.split(",") if z.strip()]
+            cfg.jooble_max_requests_per_run = int(jooble_per_run)
             cfg.enable_himalayas = enable_himalayas
             cfg.enable_remoteok = enable_remoteok
             cfg.excluded_contract_types = excluded_contracts

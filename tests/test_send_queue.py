@@ -430,7 +430,9 @@ def test_queue_puts_priority_areas_and_full_remote_before_better_scored_ones(
     assert by_id[remote.id].priority == "Full remote"
     assert by_id[paris.id].priority is None
     assert by_id[paris13.id].priority is None  # « 13 » nu n'est pas un code de zone
-    assert {item.offer.id for item in queue[:3]} == {local.id, coded.id, remote.id}
+    # Zone prioritaire d'abord, puis full remote, puis le reste.
+    assert {item.offer.id for item in queue[:2]} == {local.id, coded.id}
+    assert queue[2].offer.id == remote.id
     assert all(item.priority is None for item in queue[3:])
 
 

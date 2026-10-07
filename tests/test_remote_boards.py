@@ -230,3 +230,80 @@ def test_cycle_can_disable_remote_boards(tmp_path: Path) -> None:
 
     himalayas.assert_not_called()
     remoteok.assert_not_called()
+
+
+def test_php_currency_amounts_are_not_the_language() -> None:
+    from src.models import JobOfferData
+    from src.services.matching import assess_offer_fit, find_skill_evidence
+
+    assert find_skill_evidence("Salary: 1,000 PHP De Minimis", "PHP") is None
+    assert find_skill_evidence("Salary PHP 50,000 per month", "PHP") is None
+    assert find_skill_evidence("Offer: 25k PHP monthly", "PHP") is None
+    # Le langage reste reconnu, y compris avec une version.
+    assert find_skill_evidence("Strong PHP 8 experience", "PHP") is not None
+    assert find_skill_evidence("PHP 7/8 and Symfony", "PHP") is not None
+
+    profile = ProfileData(
+        skills=[SkillRating(name="PHP", category="Forte", level_min=8, level_max=8)]
+    )
+    offer = JobOfferData(
+        title="HR Administrator",
+        company="Exemple",
+        location="Full remote",
+        url=None,
+        source="Himalayas",
+        description="Full remote.\nSalary 1,000 PHP De Minimis allowance and HR duties.",
+    )
+    assert assess_offer_fit(offer, profile).skills.requirements_percentage is None
+
+
+def test_title_must_cite_a_profile_technology() -> None:
+    from src.services.matching import title_mentions_profile_technology
+
+    profile = ProfileData(
+        skills=[SkillRating(name="PHP", category="Forte", level_min=8, level_max=8)]
+    )
+    assert title_mentions_profile_technology("Senior Backend Developer PHP/Symfony", profile)
+    assert not title_mentions_profile_technology("HR Administrator", profile)
+    assert not title_mentions_profile_technology("Backend Developer", profile)
+    assert not title_mentions_profile_technology("Rust Engineer", profile)
+
+
+def test_cycle_drops_remote_offers_whose_title_has_no_profile_technology(
+    tmp_path: Path,
+) -> None:
+    engine = create_database_engine(tmp_path / "db.sqlite3")
+    initialize_database(engine)
+    profile = ProfileData(
+        skills=[
+            SkillRating(name="PHP", category="Forte", level_min=8, level_max=8),
+            SkillRating(name="Symfony", category="Forte", level_min=8, level_max=8),
+        ],
+    )
+    relevant = map_himalayas_job(_himalayas_job(title="Backend PHP Developer"))
+    noise = map_himalayas_job(
+        _himalayas_job(
+            title="Executive Assistant",
+            description="<p>PHP and Symfony everywhere.</p>",
+            guid="https://himalayas.app/companies/x/jobs/assistant",
+            applicationLink="https://himalayas.app/companies/x/jobs/assistant",
+        )
+    )
+    assert relevant is not None and noise is not None
+    config = WatcherConfig(
+        enable_adzuna=False,
+        enable_france_travail=False,
+        enable_remoteok=False,
+        min_match_percentage=0,
+        auto_prepare_dossier=False,
+        excluded_title_keywords=[],
+    )
+
+    with patch(
+        "src.services.job_watcher.search_himalayas",
+        return_value=RemoteBoardResult(listings=[relevant, noise]),
+    ):
+        result = run_watcher_cycle(engine, profile, config)
+
+    assert result.new_offers_imported == 1
+    assert result.excluded_skipped == 1
