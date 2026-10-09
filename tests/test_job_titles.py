@@ -22,7 +22,7 @@ REAL_TITLES = [
         "Ingénieur Développement IA & Web",
     ),
     (
-        "\\u2705 Backend Developer PHP/Symfony – Open Source & AI Features",
+        "\2705 Backend Developer PHP/Symfony – Open Source & AI Features",
         "Backend Developer PHP/Symfony",
     ),
     (
