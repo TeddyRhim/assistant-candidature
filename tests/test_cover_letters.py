@@ -70,7 +70,8 @@ def test_cover_letter_pdf_uses_edited_text() -> None:
 
     assert pdf.startswith(b"%PDF-")
     assert "candidature personnalisée" in extracted_text
-    assert "texte modifié spécifiquement" in extracted_text
+    # Sans espaces : l'extraction PDF peut couper un mot selon la police (Linux).
+    assert "textemodifiéspécifiquement" in extracted_text.replace(" ", "")
 
 
 def test_cover_letter_is_saved_and_updated_for_offer(tmp_path: Path) -> None:
