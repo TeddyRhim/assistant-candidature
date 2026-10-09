@@ -64,7 +64,7 @@ def test_extracts_semantic_text_from_tagged_pdf_in_document_order() -> None:
                     "/K": {
                         "/S": "/Document",
                         "/K": [
-                            {"/S": "/P", "/E": "TEDDY RHIM"},
+                            {"/S": "/P", "/E": "ALEXANDRE MARTIN"},
                             {
                                 "/S": "/Sect",
                                 "/K": [
@@ -79,7 +79,7 @@ def test_extracts_semantic_text_from_tagged_pdf_in_document_order() -> None:
         }
     )
 
-    assert _extract_tagged_pdf_text(reader) == "TEDDY RHIM\nCompétences\nSymfony"
+    assert _extract_tagged_pdf_text(reader) == "ALEXANDRE MARTIN\nCompétences\nSymfony"
 
 
 def test_extracts_pdf_text_in_layout_mode_and_repairs_character_spacing() -> None:
