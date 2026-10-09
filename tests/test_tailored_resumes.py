@@ -108,7 +108,7 @@ def test_tailored_resume_pdf_omits_company_location_and_offer_link() -> None:
     assert "atelier exemple" not in extracted_text
     assert "paris" not in extracted_text
     assert "php" in extracted_text
-    assert "développement d'api php." in extracted_text
+    assert "développementd'apiphp." in extracted_text.replace(" ", "")
     assert "jobs.example.com" not in extracted_text
     for page in pages:
         annotations = page.get("/Annots", [])

@@ -1,5 +1,8 @@
 # Assistant candidatures
 
+[![CI](https://github.com/TeddyRhim/assistant-candidature/actions/workflows/ci.yml/badge.svg)](https://github.com/TeddyRhim/assistant-candidature/actions/workflows/ci.yml)
+[![Licence : MIT](https://img.shields.io/badge/licence-MIT-green.svg)](LICENSE)
+
 Application locale pour organiser une recherche d'emploi de développeur : collecter des offres, les comparer à un profil et préparer des candidatures adaptées à partir d'un CV de référence.
 
 Tout reste sur la machine : base SQLite, CV, lettres et exports. Rien n'est envoyé automatiquement.
@@ -108,3 +111,7 @@ uv run ruff check .  # style
 - [Architecture](docs/architecture.md)
 - [Sources d'offres](docs/job-sources.md)
 - [Feuille de route](docs/roadmap.md)
+
+## Licence
+
+Projet distribué sous licence [MIT](LICENSE).
