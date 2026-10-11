@@ -111,6 +111,7 @@ def test_application_dialog_shows_documents_and_send_button(seeded_data: Path) -
         ("reglages", "Réglages"),
         ("recherche", "Recherche d'offres en ligne"),
         ("suivi", "Suivi des candidatures"),
+        ("offres", "Offres d'emploi"),
     ],
 )
 def test_secondary_pages_render(seeded_data: Path, url_path: str, title: str) -> None:
@@ -147,4 +148,30 @@ def test_applications_board_changes_status(seeded_data: Path) -> None:
 
     engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
     assert list_applications(engine)[0].status == "Entretien"
+    engine.dispose()
+
+
+def test_adding_an_offer_generates_an_adapted_cv_and_shows_keywords(seeded_data: Path) -> None:
+    from src.services.tailored_resumes import get_tailored_resume
+
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    assert not at.exception
+    next(box for box in at.text_input if box.label == "Intitulé du poste").set_value(
+        "Développeur Symfony H/F"
+    )
+    next(box for box in at.text_input if box.label == "Entreprise (facultatif)").set_value(
+        "Nouvelle Société"
+    )
+    next(box for box in at.text_area if box.label == "Description de l'annonce").set_value(
+        "Nous cherchons un développeur PHP et Symfony. API REST et SQL requis."
+    )
+    next(button for button in at.button if button.label == "Enregistrer l'offre").click().run()
+    assert not at.exception
+    assert any("CV adapté" in str(success.value) for success in at.success)
+    assert any("Mots de l'annonce repris" in str(md.value) for md in at.markdown)
+
+    engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
+    created = next(offer for offer in list_offers(engine) if offer.company == "Nouvelle Société")
+    assert get_tailored_resume(engine, created.id) is not None
     engine.dispose()

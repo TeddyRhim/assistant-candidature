@@ -37,6 +37,7 @@ from src.services.send_queue import (
     mark_offer_sent,
     mark_spontaneous_sent,
     set_offer_status,
+    split_paid_queue,
 )
 from src.services.tailored_resumes import get_tailored_resume
 
@@ -460,3 +461,16 @@ def test_starred_offer_still_comes_before_priority_offers(engine: Engine) -> Non
     queue = build_send_queue(engine, _profile(), priority_areas=["Lyon"])
 
     assert [item.offer.id for item in queue][:2] == [starred.id, south.id]
+
+
+def test_paid_application_sources_are_split_from_the_main_queue(engine: Engine) -> None:
+    create_offer(engine, _offer("Développeur PHP", "PHP.", url="https://example.com/a"))
+    create_offer(
+        engine,
+        _offer("Développeur Symfony", "Symfony.", url="https://example.com/b", source="Himalayas"),
+    )
+
+    free, paid = split_paid_queue(build_send_queue(engine, _profile()))
+
+    assert [item.offer.title for item in free] == ["Développeur PHP"]
+    assert [item.offer.title for item in paid] == ["Développeur Symfony"]

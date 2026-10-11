@@ -18,6 +18,7 @@ from src.models import (
 from src.services.cv_renderer import load_base_cv_data, prepare_cv_data, render_cv_pdf
 from src.services.job_titles import extract_job_role
 from src.services.matching import compare_offer_to_profile
+from src.services.offer_keywords import tailor_cv_data
 
 
 class TailoredResumeError(ValueError):
@@ -73,6 +74,7 @@ def build_tailored_resume(
     data["target_role"] = extract_job_role(offer.title, offer.location)
     prioritized_skills = [skill.name for skill in (*relevant_skills[:6], *other_skills[:6])]
     data["skills"] = _prioritize_base_skills(data["skills"], prioritized_skills)
+    data = tailor_cv_data(data, offer)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 

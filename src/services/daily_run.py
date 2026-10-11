@@ -28,6 +28,7 @@ class DailyRunResult:
     new_offers: int = 0
     dossiers_prepared: int = 0
     duplicates_skipped: int = 0
+    recently_applied_skipped: int = 0
     low_match_skipped: int = 0
     excluded_skipped: int = 0
     imported_offer_titles: list[str] = field(default_factory=list)
@@ -40,8 +41,9 @@ class DailyRunResult:
         return (
             f"{self.new_offers} nouvelle(s) offre(s) sur {self.listings_found} annonce(s) "
             f"analysée(s), {self.dossiers_prepared} dossier(s) prêt(s) "
-            f"({self.duplicates_skipped} doublon(s), {self.low_match_skipped} score "
-            f"insuffisant, {self.excluded_skipped} titre(s) exclu(s))."
+            f"({self.duplicates_skipped} doublon(s), {self.recently_applied_skipped} déjà "
+            f"postulée(s) cette semaine, {self.low_match_skipped} score insuffisant, "
+            f"{self.excluded_skipped} titre(s) exclu(s))."
         )
 
 
@@ -92,6 +94,7 @@ def run_daily(
     result.new_offers = cycle.new_offers_imported
     result.dossiers_prepared = cycle.dossiers_prepared
     result.duplicates_skipped = cycle.duplicates_skipped
+    result.recently_applied_skipped = cycle.recently_applied_skipped
     result.low_match_skipped = cycle.low_match_skipped
     result.excluded_skipped = cycle.excluded_skipped
     result.imported_offer_titles = list(cycle.imported_offer_titles)

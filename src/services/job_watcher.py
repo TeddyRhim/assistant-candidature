@@ -43,6 +43,7 @@ from src.services.job_sources.lever import fetch_lever_listings
 from src.services.job_sources.remote_common import remote_search_terms
 from src.services.job_sources.remoteok import REMOTEOK_SOURCE_NAME, search_remoteok
 from src.services.matching import assess_offer_fit, title_mentions_profile_technology
+from src.services.recent_applications import recent_application_keys, was_recently_applied
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,7 @@ class WatcherCycleResult:
     new_offers_imported: int = 0
     dossiers_prepared: int = 0
     duplicates_skipped: int = 0
+    recently_applied_skipped: int = 0
     low_match_skipped: int = 0
     excluded_skipped: int = 0
     imported_offer_titles: list[str] = field(default_factory=list)
@@ -405,6 +407,7 @@ def run_watcher_cycle(
     result.total_listings_found = len(collected_listings)
 
     # 5. Filtrage, déduplication et import en base
+    recent_keys = recent_application_keys(engine)
     with Session(engine) as session:
         known_keys = {
             offer_identity_key(title, company, location)
@@ -421,6 +424,9 @@ def run_watcher_cycle(
             identity = offer_identity_key(listing.title, listing.company, listing.location)
             if identity in known_keys:
                 result.duplicates_skipped += 1
+                continue
+            if was_recently_applied(recent_keys, listing.title, listing.company):
+                result.recently_applied_skipped += 1
                 continue
 
             # Évaluation du matching par rapport au profil candidat
