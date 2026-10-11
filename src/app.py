@@ -92,6 +92,7 @@ from src.services.cv_renderer import (
     validate_base_cv_json,
 )
 from src.services.daily_run import load_last_run, run_daily
+from src.services.data_repair import repair_legacy_data
 from src.services.dossier_generator import prepare_dossier_for_offer, prepare_pending_dossiers
 from src.services.email_delivery import EmailDeliveryError, send_application_email
 from src.services.job_offers import (
@@ -247,6 +248,7 @@ APPLICATION_STATUSES: list[ApplicationStatus] = [
 def get_engine() -> Engine:
     engine = create_database_engine()
     initialize_database(engine)
+    repair_legacy_data(engine)
     return engine
 
 
