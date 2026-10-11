@@ -174,6 +174,7 @@ def test_adding_an_offer_generates_an_adapted_cv_and_shows_keywords(seeded_data:
     engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
     created = next(offer for offer in list_offers(engine) if offer.company == "Nouvelle Société")
     assert get_tailored_resume(engine, created.id) is not None
+    assert created.cv_state == "À soigner"
     engine.dispose()
 
 

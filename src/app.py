@@ -883,7 +883,7 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
         if new_offer is not None:
             created = create_offer(engine, new_offer)
             st.session_state["offer_flash"] = _prepare_adapted_dossier(
-                engine, profile, created.id, new_offer
+                engine, profile, created.id, new_offer, to_curate=True
             )
             st.rerun()
     except ValidationError as error:
