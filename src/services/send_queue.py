@@ -25,7 +25,7 @@ from src.services.applications import ApplicationNotFound
 from src.services.companies import CompanyNotFound
 from src.services.cv_curation import CV_CURATED, CV_TO_CURATE, set_cv_state
 from src.services.dossier_generator import prepare_dossier_for_offer
-from src.services.job_offers import OfferNotFound
+from src.services.job_offers import ORIGIN_MANUAL, OfferNotFound
 from src.services.matching import assess_offer_fit, is_remote_offer
 from src.services.recent_applications import recent_application_keys, was_recently_applied
 from src.services.tailored_resumes import get_tailored_resume
@@ -177,11 +177,29 @@ def is_paid_application_source(offer: JobOffer) -> bool:
     return offer.source in PAID_APPLICATION_SOURCES
 
 
-def split_paid_queue(queue: Sequence[QueueItem]) -> tuple[list[QueueItem], list[QueueItem]]:
-    """Sépare la file en (offres gratuites, offres à candidature payante)."""
-    free = [item for item in queue if not is_paid_application_source(item.offer)]
-    paid = [item for item in queue if is_paid_application_source(item.offer)]
-    return free, paid
+@dataclass(frozen=True)
+class QueueGroups:
+    manual: list[QueueItem]
+    automatic: list[QueueItem]
+    paid: list[QueueItem]
+
+    @property
+    def sendable(self) -> list[QueueItem]:
+        """Tout ce qui se poste sans payer : tes ajouts d'abord, puis les offres importées."""
+        return [*self.manual, *self.automatic]
+
+
+def group_queue(queue: Sequence[QueueItem]) -> QueueGroups:
+    """Sépare la file : offres saisies par toi, offres importées, offres à candidature payante.
+
+    Une offre que tu as saisie reste dans ta liste même si sa source est payante : tu l'as
+    choisie. Le classement par pertinence est conservé dans chaque groupe.
+    """
+    manual = [item for item in queue if item.offer.origin == ORIGIN_MANUAL]
+    imported = [item for item in queue if item.offer.origin != ORIGIN_MANUAL]
+    paid = [item for item in imported if is_paid_application_source(item.offer)]
+    automatic = [item for item in imported if not is_paid_application_source(item.offer)]
+    return QueueGroups(manual=manual, automatic=automatic, paid=paid)
 
 
 def build_send_queue(

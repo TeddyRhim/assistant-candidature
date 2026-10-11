@@ -169,3 +169,29 @@ def test_delete_company_sets_offer_company_id_to_null(tmp_path) -> None:
     assert len(offers) == 1
     assert offers[0].company_id is None
     engine.dispose()
+
+
+def test_origin_column_is_added_and_backfilled_for_existing_databases(tmp_path) -> None:
+    from sqlalchemy import text
+
+    from src.db import create_database_engine, initialize_database
+
+    engine = create_database_engine(tmp_path / "old.sqlite3")
+    initialize_database(engine)
+    sources = {"a": "Saisie manuelle", "b": "Import URL — www.linkedin.com", "c": "Adzuna"}
+    for name, source in sources.items():
+        create_offer(
+            engine,
+            JobOfferData(
+                title=f"Dev {name}",
+                url=f"https://x.test/{name}",
+                source=source,
+                description="PHP.",
+            ),
+        )
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE job_offers DROP COLUMN origin"))
+    initialize_database(engine)
+
+    origins = {offer.title: offer.origin for offer in list_offers(engine)}
+    assert origins == {"Dev a": "Manuel", "Dev b": "Manuel", "Dev c": "Application"}

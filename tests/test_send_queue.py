@@ -21,7 +21,7 @@ from src.models import (
 from src.services.applications import ApplicationNotFound, list_applications
 from src.services.companies import CompanyNotFound, create_company
 from src.services.cover_letters import get_cover_letter, save_cover_letter
-from src.services.job_offers import OfferNotFound, create_offer, list_offers
+from src.services.job_offers import ORIGIN_MANUAL, OfferNotFound, create_offer, list_offers
 from src.services.send_queue import (
     OfferAlreadySent,
     SpontaneousAlreadySent,
@@ -32,12 +32,12 @@ from src.services.send_queue import (
     complete_offer_description,
     contact_search_links,
     due_follow_ups,
+    group_queue,
     is_probably_truncated,
     mark_followed_up,
     mark_offer_sent,
     mark_spontaneous_sent,
     set_offer_status,
-    split_paid_queue,
 )
 from src.services.tailored_resumes import get_tailored_resume
 
@@ -470,7 +470,29 @@ def test_paid_application_sources_are_split_from_the_main_queue(engine: Engine) 
         _offer("Développeur Symfony", "Symfony.", url="https://example.com/b", source="Himalayas"),
     )
 
-    free, paid = split_paid_queue(build_send_queue(engine, _profile()))
+    groups = group_queue(build_send_queue(engine, _profile()))
 
-    assert [item.offer.title for item in free] == ["Développeur PHP"]
-    assert [item.offer.title for item in paid] == ["Développeur Symfony"]
+    assert [item.offer.title for item in groups.automatic] == ["Développeur PHP"]
+    assert [item.offer.title for item in groups.paid] == ["Développeur Symfony"]
+    assert groups.manual == []
+
+
+def test_offers_added_by_hand_get_their_own_group_even_from_a_paid_source(
+    engine: Engine,
+) -> None:
+    create_offer(engine, _offer("Développeur PHP", "PHP.", url="https://example.com/a"))
+    create_offer(
+        engine,
+        _offer("Développeur Symfony", "Symfony.", url="https://example.com/b", source="Himalayas"),
+        origin=ORIGIN_MANUAL,
+    )
+
+    groups = group_queue(build_send_queue(engine, _profile()))
+
+    assert [item.offer.title for item in groups.manual] == ["Développeur Symfony"]
+    assert [item.offer.title for item in groups.automatic] == ["Développeur PHP"]
+    assert groups.paid == []
+    assert [item.offer.title for item in groups.sendable] == [
+        "Développeur Symfony",
+        "Développeur PHP",
+    ]
