@@ -23,6 +23,7 @@ from src.models import (
 )
 from src.services.applications import ApplicationNotFound
 from src.services.companies import CompanyNotFound
+from src.services.cv_curation import CV_CURATED, CV_TO_CURATE, set_cv_state
 from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import OfferNotFound
 from src.services.matching import assess_offer_fit, is_remote_offer
@@ -107,6 +108,8 @@ def complete_offer_description(
         )
         regenerated = bool(result.tailored_resume_id or result.cover_letter_id)
         dossier_error = result.error
+        if regenerated and offer.cv_state == CV_CURATED:
+            set_cv_state(engine, offer_id, CV_TO_CURATE)
     return DescriptionUpdate(score_before, score_after, regenerated, dossier_error)
 
 

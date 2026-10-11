@@ -135,6 +135,9 @@ class JobOffer(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     collected_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    cv_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="Automatique", server_default="Automatique"
+    )
 
 
 class CompanyData(BaseModel):

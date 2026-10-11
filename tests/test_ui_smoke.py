@@ -175,3 +175,21 @@ def test_adding_an_offer_generates_an_adapted_cv_and_shows_keywords(seeded_data:
     created = next(offer for offer in list_offers(engine) if offer.company == "Nouvelle Société")
     assert get_tailored_resume(engine, created.id) is not None
     engine.dispose()
+
+
+def test_offer_can_be_marked_to_curate_and_shows_in_queue_and_home(seeded_data: Path) -> None:
+    from src.services.cv_curation import CV_TO_CURATE, list_offers_to_curate
+
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    next(button for button in at.button if button.label == "Marquer le CV à soigner").click().run()
+    assert not at.exception
+
+    engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
+    assert [offer.cv_state for offer in list_offers_to_curate(engine)] == [CV_TO_CURATE]
+    engine.dispose()
+
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    assert any("CV à soigner" in str(info.value) for info in at.info)
+    _open_page(at, "file-d-envoi")
+    assert "CV à soigner" in _messages(at.markdown)

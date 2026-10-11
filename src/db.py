@@ -42,6 +42,12 @@ def _migrate_database(engine: Engine) -> None:
                 "REFERENCES companies(id) ON DELETE SET NULL"
             )
             raw_connection.commit()
+        if columns and "cv_state" not in columns:
+            cursor.execute(
+                "ALTER TABLE job_offers ADD COLUMN cv_state VARCHAR(20) "
+                "NOT NULL DEFAULT 'Automatique'"
+            )
+            raw_connection.commit()
         cursor.execute("PRAGMA table_info(applications)")
         application_columns = [row[1] for row in cursor.fetchall()]
         if application_columns and "prep_seconds" not in application_columns:
