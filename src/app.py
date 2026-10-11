@@ -76,6 +76,13 @@ from src.services.cover_letters import (
     save_cover_letter,
     validate_cover_letter_content,
 )
+from src.services.cv_curation import (
+    CV_AUTOMATIC,
+    CV_CURATED,
+    CV_TO_CURATE,
+    list_offers_to_curate,
+    set_cv_state,
+)
 from src.services.cv_renderer import (
     load_base_cv_data,
     render_cv_html,
@@ -274,6 +281,13 @@ def show_home(engine: Engine, profile: ProfileData) -> None:
     if due:
         st.subheader(f"À relancer ({len(due)})")
         _show_follow_ups(engine, limit=3, heading=False)
+
+    to_curate = list_offers_to_curate(engine)
+    if to_curate:
+        st.info(
+            f"{len(to_curate)} CV à soigner. Dans Claude Code, lance le skill soigner-cv : "
+            "il rédige le CV de chaque offre, puis l'état passe à « Soigné »."
+        )
 
     st.subheader("À envoyer maintenant")
     if not queue:
@@ -683,6 +697,19 @@ def _offer_form(
     )
 
 
+def _show_cv_state_control(engine: Engine, offer) -> None:
+    """État du CV (Automatique, À soigner, Soigné) et bascule vers la file à soigner."""
+    columns = st.columns([3, 2], vertical_alignment="center")
+    columns[0].caption(f"CV : {offer.cv_state}")
+    if offer.cv_state == CV_TO_CURATE:
+        label, target = "Retirer de la file à soigner", CV_AUTOMATIC
+    else:
+        label, target = "Marquer le CV à soigner", CV_TO_CURATE
+    if columns[1].button(label, key=f"cv_state_{offer.id}"):
+        set_cv_state(engine, offer.id, target)
+        st.rerun()
+
+
 def _show_keyword_report(report: KeywordReport) -> None:
     """Mots de l'annonce rapportés à ce que le CV dit déjà (aucun mot n'est jamais ajouté)."""
     total = len(report.found) + len(report.missing) + len(report.profile_only)
@@ -707,7 +734,12 @@ def _show_keyword_report(report: KeywordReport) -> None:
 
 
 def _prepare_adapted_dossier(
-    engine: Engine, profile: ProfileData, offer_id: str, offer_data: JobOfferData
+    engine: Engine,
+    profile: ProfileData,
+    offer_id: str,
+    offer_data: JobOfferData,
+    *,
+    to_curate: bool = False,
 ) -> dict[str, object]:
     """Génère le CV adapté et la lettre d'une offre qu'on vient d'ajouter, et le rapport."""
     result = prepare_dossier_for_offer(engine, offer_id, offer_data, profile)
@@ -720,11 +752,14 @@ def _prepare_adapted_dossier(
             report = keyword_report(offer_data, json.loads(resume.content), profile)
         except (ValueError, TypeError):
             report = None
-    return {
-        "message": "Offre enregistrée. CV adapté à l'annonce et lettre générés (voir « File "
-        "d'envoi » ou « CV par offre »).",
-        "report": report,
-    }
+    message = (
+        "Offre enregistrée. CV adapté à l'annonce et lettre générés (voir « File "
+        "d'envoi » ou « CV par offre »)."
+    )
+    if to_curate:
+        set_cv_state(engine, offer_id, CV_TO_CURATE)
+        message += " Le CV est marqué « à soigner » : lance le skill soigner-cv dans Claude Code."
+    return {"message": message, "report": report}
 
 
 def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
@@ -825,7 +860,7 @@ def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
     else:
         st.session_state.pop("offer_link_draft", None)
         st.session_state["offer_flash"] = _prepare_adapted_dossier(
-            engine, profile, created.id, offer_data
+            engine, profile, created.id, offer_data, to_curate=True
         )
         st.rerun()
 
@@ -900,6 +935,7 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
             )
             if offer.url:
                 st.markdown(f"[Ouvrir l'annonce]({offer.url})")
+            _show_cv_state_control(engine, offer)
             if fit.overall_percentage is not None:
                 st.progress(fit.overall_percentage / 100)
                 st.caption(
@@ -3982,6 +4018,10 @@ def _show_queue_card(engine: Engine, profile: ProfileData, item: QueueItem) -> N
         )
         if is_probably_truncated(offer):
             badges.append(":orange-badge[Annonce tronquée]")
+        if offer.cv_state == CV_TO_CURATE:
+            badges.append(":blue-badge[CV à soigner]")
+        elif offer.cv_state == CV_CURATED:
+            badges.append(":green-badge[CV soigné]")
         info = " · ".join(
             part for part in (offer.contract_type, offer.location, offer.source) if part
         )
