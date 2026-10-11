@@ -165,6 +165,21 @@ def offer_priority(
     return None
 
 
+PAID_APPLICATION_SOURCES = ("Himalayas",)
+
+
+def is_paid_application_source(offer: JobOffer) -> bool:
+    """Sources dont la candidature est payante : classées à part dans la file d'envoi."""
+    return offer.source in PAID_APPLICATION_SOURCES
+
+
+def split_paid_queue(queue: Sequence[QueueItem]) -> tuple[list[QueueItem], list[QueueItem]]:
+    """Sépare la file en (offres gratuites, offres à candidature payante)."""
+    free = [item for item in queue if not is_paid_application_source(item.offer)]
+    paid = [item for item in queue if is_paid_application_source(item.offer)]
+    return free, paid
+
+
 def build_send_queue(
     engine: Engine,
     profile: ProfileData,

@@ -192,6 +192,7 @@ from src.services.send_queue import (
     mark_spontaneous_sent,
     offer_to_data,
     set_offer_status,
+    split_paid_queue,
 )
 from src.services.tailored_resumes import (
     TailoredResumeError,
@@ -253,7 +254,7 @@ def show_home(engine: Engine, profile: ProfileData) -> None:
         return
 
     min_score = load_watcher_config().min_match_percentage
-    queue = build_send_queue(engine, profile, min_score)
+    queue, _paid_queue = split_paid_queue(build_send_queue(engine, profile, min_score))
     due = due_follow_ups(engine)
     sent_count = sum(a.status != "À préparer" for a in list_applications(engine))
     average = average_prep_seconds(engine)
@@ -3979,14 +3980,24 @@ def show_send_queue_page(engine: Engine, profile: ProfileData) -> None:
     )
     _show_follow_ups(engine)
 
-    offers_tab, spontaneous_tab = st.tabs(["Offres", "Candidatures spontanées"])
+    offers_tab, paid_tab, spontaneous_tab = st.tabs(
+        ["Offres", "Himalayas (candidature payante)", "Candidatures spontanées"]
+    )
     with offers_tab:
         _show_offers_queue(engine, profile)
+    with paid_tab:
+        _show_offers_queue(engine, profile, paid=True)
     with spontaneous_tab:
         _show_spontaneous_queue(engine, profile)
 
 
-def _show_offers_queue(engine: Engine, profile: ProfileData) -> None:
+def _show_offers_queue(engine: Engine, profile: ProfileData, *, paid: bool = False) -> None:
+    key = "paid" if paid else "free"
+    if paid:
+        st.caption(
+            "Himalayas fait payer la candidature : ces offres sont séparées de la file "
+            "principale. Garde-les pour plus tard ou écarte-les."
+        )
     controls = st.columns(2)
     min_score = controls[0].slider(
         "Score minimal",
@@ -3995,9 +4006,13 @@ def _show_offers_queue(engine: Engine, profile: ProfileData) -> None:
         value=load_watcher_config().min_match_percentage,
         step=5,
         help="Les offres marquées « Intéressante » restent affichées sous ce seuil.",
+        key=f"queue_min_score_{key}",
     )
-    limit = controls[1].selectbox("Offres affichées", options=[10, 20, 50], index=0)
-    queue = build_send_queue(engine, profile, min_score)
+    limit = controls[1].selectbox(
+        "Offres affichées", options=[10, 20, 50], index=0, key=f"queue_limit_{key}"
+    )
+    free_queue, paid_queue = split_paid_queue(build_send_queue(engine, profile, min_score))
+    queue = paid_queue if paid else free_queue
 
     ready_count = sum(item.is_ready for item in queue)
     metrics = st.columns(2)
