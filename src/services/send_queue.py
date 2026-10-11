@@ -26,6 +26,7 @@ from src.services.companies import CompanyNotFound
 from src.services.dossier_generator import prepare_dossier_for_offer
 from src.services.job_offers import OfferNotFound
 from src.services.matching import assess_offer_fit, is_remote_offer
+from src.services.recent_applications import recent_application_keys, was_recently_applied
 from src.services.tailored_resumes import get_tailored_resume
 
 FOLLOW_UP_DAYS = 7
@@ -214,9 +215,12 @@ def build_send_queue(
             )
         )
 
+    recent_keys = recent_application_keys(engine)
     items = []
     for offer in offers:
         if offer.id in sent_offer_ids:
+            continue
+        if was_recently_applied(recent_keys, offer.title, offer.company):
             continue
         score = assess_offer_fit(offer_to_data(offer), profile).overall_percentage or 0
         if score < min_score and offer.status != "Intéressante":

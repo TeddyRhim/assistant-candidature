@@ -168,6 +168,7 @@ from src.services.matching import (
     search_languages,
 )
 from src.services.offer_import import OfferImportError, import_offer_from_url
+from src.services.offer_keywords import KeywordReport, keyword_report
 from src.services.resume_import import (
     ResumeImportError,
     extract_resume_text,
@@ -682,7 +683,51 @@ def _offer_form(
     )
 
 
-def _offer_link_import_ui(engine: Engine) -> None:
+def _show_keyword_report(report: KeywordReport) -> None:
+    """Mots de l'annonce rapportés à ce que le CV dit déjà (aucun mot n'est jamais ajouté)."""
+    total = len(report.found) + len(report.missing) + len(report.profile_only)
+    if not total:
+        st.caption("Aucun terme technique reconnu dans cette annonce.")
+        return
+    st.markdown(f"**Mots de l'annonce repris dans ton CV : {len(report.found)}/{total}**")
+    if report.found:
+        st.write(", ".join(report.found))
+    if report.profile_only:
+        st.caption(
+            "Demandés et présents dans ton profil, mais pas dans ton CV : "
+            + ", ".join(report.profile_only)
+            + ". Ajoute-les à ton CV de référence si tu les as vraiment pratiqués."
+        )
+    if report.missing:
+        st.caption(
+            "Demandés et absents de ton CV : "
+            + ", ".join(report.missing)
+            + ". Ils ne sont jamais ajoutés automatiquement."
+        )
+
+
+def _prepare_adapted_dossier(
+    engine: Engine, profile: ProfileData, offer_id: str, offer_data: JobOfferData
+) -> dict[str, object]:
+    """Génère le CV adapté et la lettre d'une offre qu'on vient d'ajouter, et le rapport."""
+    result = prepare_dossier_for_offer(engine, offer_id, offer_data, profile)
+    if result.error:
+        return {"message": f"Offre enregistrée. Dossier non préparé : {result.error}"}
+    resume = get_tailored_resume(engine, offer_id)
+    report = None
+    if resume is not None:
+        try:
+            report = keyword_report(offer_data, json.loads(resume.content), profile)
+        except (ValueError, TypeError):
+            report = None
+    return {
+        "message": "Offre enregistrée. CV adapté à l'annonce et lettre générés (voir « File "
+        "d'envoi » ou « CV par offre »).",
+        "report": report,
+    }
+
+
+def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
     st.subheader("Importer depuis le lien d'une annonce")
     st.caption(
         "L'application lit uniquement l'URL que tu soumets, extrait les informations "
@@ -771,7 +816,7 @@ def _offer_link_import_ui(engine: Engine) -> None:
             source=source,
             description=description,
         )
-        create_offer(engine, offer_data)
+        created = create_offer(engine, offer_data)
     except ValidationError as error:
         for issue in error.errors():
             st.error(issue["msg"])
@@ -779,8 +824,8 @@ def _offer_link_import_ui(engine: Engine) -> None:
         st.error(str(error))
     else:
         st.session_state.pop("offer_link_draft", None)
-        st.success(
-            "Offre vérifiée et enregistrée. Elle est maintenant disponible dans CV par offre."
+        st.session_state["offer_flash"] = _prepare_adapted_dossier(
+            engine, profile, created.id, offer_data
         )
         st.rerun()
 
@@ -791,13 +836,20 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
         "Ajoute une annonce manuellement, colle son lien pour en extraire les informations, "
         "ou importe les résultats de recherche disponibles."
     )
-    _offer_link_import_ui(engine)
+    flash = st.session_state.pop("offer_flash", None)
+    if flash:
+        st.success(flash["message"])
+        if flash.get("report") is not None:
+            _show_keyword_report(flash["report"])
+    _offer_link_import_ui(engine, profile)
     st.subheader("Ajouter une offre")
     try:
         new_offer = _offer_form("new_offer")
         if new_offer is not None:
-            create_offer(engine, new_offer)
-            st.success("Offre enregistrée localement.")
+            created = create_offer(engine, new_offer)
+            st.session_state["offer_flash"] = _prepare_adapted_dossier(
+                engine, profile, created.id, new_offer
+            )
             st.rerun()
     except ValidationError as error:
         for issue in error.errors():
@@ -811,6 +863,10 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
         st.info("Aucune offre pour le moment. Tu peux commencer par coller une annonce ci-dessus.")
         return
 
+    try:
+        base_cv_data = load_base_cv_data()
+    except (OSError, ValueError):
+        base_cv_data = {}
     scored_offers = []
     for offer in offers:
         offer_data = JobOfferData(
@@ -860,6 +916,7 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
                 technologies_caption = _required_technologies_text(comparison)
                 if technologies_caption:
                     st.caption(technologies_caption)
+                _show_keyword_report(keyword_report(offer_data, base_cv_data, profile))
                 for match in comparison.matches:
                     if match.mentioned:
                         st.write(
@@ -1836,6 +1893,7 @@ def _show_job_watcher_tab(engine: Engine, profile: ProfileData) -> None:
                 f"- **Nouvelles offres importées** : {last_res.new_offers_imported}\n"
                 f"- **Dossiers pré-générés (CV + Lettre)** : {last_res.dossiers_prepared}\n"
                 f"- **Doublons ignorés** : {last_res.duplicates_skipped}\n"
+                f"- **Déjà postulées cette semaine** : {last_res.recently_applied_skipped}\n"
                 f"- **Score insuffisant (< {cfg.min_match_percentage}%)** : "
                 f"{last_res.low_match_skipped}\n"
                 f"- **Titres exclus (stage, freelance…)** : {last_res.excluded_skipped}"
@@ -2372,6 +2430,10 @@ def _show_single_tailored_resume_page(engine: Engine, profile: ProfileData) -> N
                     for match in matched_skills
                 )
             )
+    try:
+        _show_keyword_report(keyword_report(offer_data, load_base_cv_data(), profile))
+    except (OSError, ValueError):
+        pass
     relocation_question = relocation_question_for_offer(offer_data)
     if relocation_question:
         st.subheader("Question à reprendre dans la lettre ou le mail")

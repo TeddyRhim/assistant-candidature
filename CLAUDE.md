@@ -18,7 +18,7 @@ Ne jamais remettre à zéro le compteur de quota Jooble sans raison. Adzuna : un
 
 ## Structure
 - `src/app.py` (interface, très long), `src/cli.py`, `src/config.py`, `src/db.py`, `src/models.py`.
-- `src/services` : `job_watcher.py` (cycle de veille, filtres, doublons), `daily_run.py`, `matching.py`, `job_titles.py`, `send_queue.py`, `dossier_generator.py`, `tailored_resumes.py`, `cv_renderer.py` (Jinja2 et WeasyPrint), `cover_letters.py`, `applications.py`, `email_delivery.py`.
+- `src/services` : `job_watcher.py` (cycle de veille, filtres, doublons), `daily_run.py`, `matching.py`, `job_titles.py`, `send_queue.py`, `dossier_generator.py`, `tailored_resumes.py`, `offer_keywords.py` (mots de l'annonce, adaptation du CV), `recent_applications.py` (offres déjà visées cette semaine), `cv_renderer.py` (Jinja2 et WeasyPrint), `cover_letters.py`, `applications.py`, `email_delivery.py`.
 - `src/services/job_sources` : un connecteur par source (Adzuna, France Travail, Jooble, Himalayas et RemoteOK, Greenhouse, Lever, La Bonne Boîte).
 - `templates/` (CV, lettre), `docs/` (architecture, sources, feuille de route), `tests/`.
 
@@ -31,5 +31,7 @@ Ne jamais remettre à zéro le compteur de quota Jooble sans raison. Adzuna : un
 ## Règles métier
 - Les exclusions personnelles, la zone prioritaire, le seuil de score et les interrupteurs par source se règlent dans la page Veille ou dans `data/watcher_config.json`, jamais en dur dans le code ni dans les tests.
 - Filtres : titres de stage et d'alternance, rôles hors développement, contrats exclus, annonces ni en français ni en anglais, score sous le seuil. Doublons : même URL ou même clé normalisée (titre, entreprise, lieu).
+- Une offre dont l'entreprise et le poste correspondent à une candidature envoyée dans les 7 derniers jours est ignorée par la veille et masquée de la file d'envoi.
+- Le CV adapté ne fait que réordonner, réduire (6 puces par expérience au plus) et mettre en gras ce que le CV contient déjà ; un mot demandé mais absent n'est jamais ajouté, seulement signalé.
 - Le nom de l'entreprise n'apparaît jamais dans le nom de fichier du CV ni dans le CV lui-même ; il reste dans la lettre.
 - Ne pas pousser les références locales `refs/agents/*` (points de reprise non publiés).
