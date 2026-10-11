@@ -95,6 +95,7 @@ from src.services.daily_run import load_last_run, run_daily
 from src.services.dossier_generator import prepare_dossier_for_offer, prepare_pending_dossiers
 from src.services.email_delivery import EmailDeliveryError, send_application_email
 from src.services.job_offers import (
+    ORIGIN_MANUAL,
     DuplicateOfferURL,
     OfferNotFound,
     create_offer,
@@ -194,13 +195,13 @@ from src.services.send_queue import (
     complete_offer_description,
     contact_search_links,
     due_follow_ups,
+    group_queue,
     is_probably_truncated,
     mark_followed_up,
     mark_offer_sent,
     mark_spontaneous_sent,
     offer_to_data,
     set_offer_status,
-    split_paid_queue,
 )
 from src.services.tailored_resumes import (
     TailoredResumeError,
@@ -262,7 +263,7 @@ def show_home(engine: Engine, profile: ProfileData) -> None:
         return
 
     min_score = load_watcher_config().min_match_percentage
-    queue, _paid_queue = split_paid_queue(build_send_queue(engine, profile, min_score))
+    queue = group_queue(build_send_queue(engine, profile, min_score)).sendable
     due = due_follow_ups(engine)
     sent_count = sum(a.status != "À préparer" for a in list_applications(engine))
     average = average_prep_seconds(engine)
@@ -851,7 +852,7 @@ def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
             source=source,
             description=description,
         )
-        created = create_offer(engine, offer_data)
+        created = create_offer(engine, offer_data, origin=ORIGIN_MANUAL)
     except ValidationError as error:
         for issue in error.errors():
             st.error(issue["msg"])
@@ -881,7 +882,7 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
     try:
         new_offer = _offer_form("new_offer")
         if new_offer is not None:
-            created = create_offer(engine, new_offer)
+            created = create_offer(engine, new_offer, origin=ORIGIN_MANUAL)
             st.session_state["offer_flash"] = _prepare_adapted_dossier(
                 engine, profile, created.id, new_offer, to_curate=True
             )
@@ -893,9 +894,31 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
         st.error(str(error))
 
     offers = list_offers(engine)
+    if not offers:
+        st.subheader("Offres enregistrées (0)")
+        st.info("Aucune offre pour le moment. Tu peux commencer par coller une annonce ci-dessus.")
+        return
+    manual_count = sum(offer.origin == ORIGIN_MANUAL for offer in offers)
+    origin_filter = st.radio(
+        "Origine",
+        options=["Toutes", "Ajoutées par moi", "Importées par l'application"],
+        format_func=lambda value: {
+            "Toutes": f"Toutes ({len(offers)})",
+            "Ajoutées par moi": f"Ajoutées par moi ({manual_count})",
+            "Importées par l'application": (
+                f"Importées par l'application ({len(offers) - manual_count})"
+            ),
+        }[value],
+        horizontal=True,
+        key="offers_origin_filter",
+    )
+    if origin_filter == "Ajoutées par moi":
+        offers = [offer for offer in offers if offer.origin == ORIGIN_MANUAL]
+    elif origin_filter == "Importées par l'application":
+        offers = [offer for offer in offers if offer.origin != ORIGIN_MANUAL]
     st.subheader(f"Offres enregistrées ({len(offers)})")
     if not offers:
-        st.info("Aucune offre pour le moment. Tu peux commencer par coller une annonce ci-dessus.")
+        st.info("Aucune offre dans cette catégorie.")
         return
 
     try:
@@ -4082,30 +4105,44 @@ def show_send_queue_page(engine: Engine, profile: ProfileData) -> None:
     )
     _show_follow_ups(engine)
 
-    offers_tab, paid_tab, spontaneous_tab = st.tabs(
-        ["Offres", "Himalayas (candidature payante)", "Candidatures spontanées"]
+    manual_tab, imported_tab, paid_tab, spontaneous_tab = st.tabs(
+        [
+            "Ajoutées par moi",
+            "Importées par l'application",
+            "Himalayas (candidature payante)",
+            "Candidatures spontanées",
+        ]
     )
-    with offers_tab:
-        _show_offers_queue(engine, profile)
+    with manual_tab:
+        _show_offers_queue(engine, profile, group="manual")
+    with imported_tab:
+        _show_offers_queue(engine, profile, group="automatic")
     with paid_tab:
-        _show_offers_queue(engine, profile, paid=True)
+        _show_offers_queue(engine, profile, group="paid")
     with spontaneous_tab:
         _show_spontaneous_queue(engine, profile)
 
 
-def _show_offers_queue(engine: Engine, profile: ProfileData, *, paid: bool = False) -> None:
-    key = "paid" if paid else "free"
-    if paid:
+def _show_offers_queue(engine: Engine, profile: ProfileData, *, group: str) -> None:
+    key = group
+    if group == "paid":
         st.caption(
             "Himalayas fait payer la candidature : ces offres sont séparées de la file "
             "principale. Garde-les pour plus tard ou écarte-les."
         )
+    elif group == "manual":
+        st.caption(
+            "Les offres que tu as ajoutées toi-même, par formulaire ou par lien. Elles sont "
+            "toutes affichées, sans seuil de score."
+        )
+    else:
+        st.caption("Les offres trouvées par la veille et les recherches de l'application.")
     controls = st.columns(2)
     min_score = controls[0].slider(
         "Score minimal",
         min_value=0,
         max_value=90,
-        value=load_watcher_config().min_match_percentage,
+        value=0 if group == "manual" else load_watcher_config().min_match_percentage,
         step=5,
         help="Les offres marquées « Intéressante » restent affichées sous ce seuil.",
         key=f"queue_min_score_{key}",
@@ -4113,8 +4150,8 @@ def _show_offers_queue(engine: Engine, profile: ProfileData, *, paid: bool = Fal
     limit = controls[1].selectbox(
         "Offres affichées", options=[10, 20, 50], index=0, key=f"queue_limit_{key}"
     )
-    free_queue, paid_queue = split_paid_queue(build_send_queue(engine, profile, min_score))
-    queue = paid_queue if paid else free_queue
+    groups = group_queue(build_send_queue(engine, profile, min_score))
+    queue = getattr(groups, group)
 
     ready_count = sum(item.is_ready for item in queue)
     metrics = st.columns(2)

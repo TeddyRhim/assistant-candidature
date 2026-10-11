@@ -175,6 +175,7 @@ def test_adding_an_offer_generates_an_adapted_cv_and_shows_keywords(seeded_data:
     created = next(offer for offer in list_offers(engine) if offer.company == "Nouvelle Société")
     assert get_tailored_resume(engine, created.id) is not None
     assert created.cv_state == "À soigner"
+    assert created.origin == "Manuel"
     engine.dispose()
 
 
@@ -194,3 +195,29 @@ def test_offer_can_be_marked_to_curate_and_shows_in_queue_and_home(seeded_data: 
     assert any("CV à soigner" in str(info.value) for info in at.info)
     _open_page(at, "file-d-envoi")
     assert "CV à soigner" in _messages(at.markdown)
+
+
+def test_queue_separates_my_offers_from_imported_ones(seeded_data: Path) -> None:
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    next(box for box in at.text_input if box.label == "Intitulé du poste").set_value(
+        "Développeur Symfony H/F"
+    )
+    next(box for box in at.text_area if box.label == "Description de l'annonce").set_value(
+        "Nous cherchons un développeur PHP et Symfony. API REST et SQL requis."
+    )
+    next(button for button in at.button if button.label == "Enregistrer l'offre").click().run()
+
+    _open_page(at, "file-d-envoi")
+    assert not at.exception
+    assert [tab.label for tab in at.tabs][:4] == [
+        "Ajoutées par moi",
+        "Importées par l'application",
+        "Himalayas (candidature payante)",
+        "Candidatures spontanées",
+    ]
+    manual_buttons = [button.key for button in at.tabs[0].button if button.key]
+    imported_buttons = [button.key for button in at.tabs[1].button if button.key]
+    assert any(key.startswith("queue_open_") for key in manual_buttons)
+    assert any(key.startswith("queue_open_") for key in imported_buttons)
+    assert not set(manual_buttons) & set(imported_buttons)

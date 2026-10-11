@@ -48,6 +48,16 @@ def _migrate_database(engine: Engine) -> None:
                 "NOT NULL DEFAULT 'Automatique'"
             )
             raw_connection.commit()
+        if columns and "origin" not in columns:
+            cursor.execute(
+                "ALTER TABLE job_offers ADD COLUMN origin VARCHAR(20) "
+                "NOT NULL DEFAULT 'Application'"
+            )
+            cursor.execute(
+                "UPDATE job_offers SET origin = 'Manuel' "
+                "WHERE source = 'Saisie manuelle' OR source LIKE 'Import URL%'"
+            )
+            raw_connection.commit()
         cursor.execute("PRAGMA table_info(applications)")
         application_columns = [row[1] for row in cursor.fetchall()]
         if application_columns and "prep_seconds" not in application_columns:

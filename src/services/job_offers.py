@@ -48,7 +48,14 @@ def _resolve_company_id(
     )
 
 
-def create_offer(engine: Engine, offer_data: JobOfferData) -> JobOffer:
+ORIGIN_APPLICATION = "Application"
+ORIGIN_MANUAL = "Manuel"
+
+
+def create_offer(
+    engine: Engine, offer_data: JobOfferData, *, origin: str = ORIGIN_APPLICATION
+) -> JobOffer:
+    """Enregistre une offre ; `origin` dit si l'application l'a importée ou si tu l'as saisie."""
     data_dict = offer_data.model_dump()
     with Session(engine, expire_on_commit=False) as session, session.begin():
         _ensure_unique_url(session, offer_data.url)
@@ -60,6 +67,7 @@ def create_offer(engine: Engine, offer_data: JobOfferData) -> JobOffer:
             id=uuid.uuid4().hex,
             **data_dict,
             collected_at=datetime.now(UTC).isoformat(),
+            origin=origin,
         )
         session.add(offer)
     return offer

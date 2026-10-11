@@ -138,6 +138,9 @@ class JobOffer(Base):
     cv_state: Mapped[str] = mapped_column(
         String(20), nullable=False, default="Automatique", server_default="Automatique"
     )
+    origin: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="Application", server_default="Application"
+    )
 
 
 class CompanyData(BaseModel):
