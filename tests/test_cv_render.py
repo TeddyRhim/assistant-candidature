@@ -92,10 +92,9 @@ def test_tailored_cv_filename_is_descriptive_and_stable() -> None:
     assert "01" not in filename
 
 
-def test_base_cv_json_can_be_validated_and_saved(tmp_path: Path, monkeypatch) -> None:
+def test_base_cv_json_can_be_validated_and_saved() -> None:
     data = load_base_cv_data()
-    destination = tmp_path / "cv_base.json"
-    monkeypatch.setattr(cv_renderer, "BASE_CV_PATH", destination)
+    destination = cv_renderer.get_base_cv_path()
     data["experience"].append(
         {
             "role": "Développeuse de test",

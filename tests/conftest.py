@@ -1,20 +1,8 @@
-"""Fixtures partagées : les tests n'utilisent jamais le vrai ``data/cv_base.json``."""
+"""Fixtures partagées : les tests n'utilisent jamais le vrai dossier ``data/``."""
 
 from __future__ import annotations
 
 import pytest
-
-from src.services import cv_renderer
-
-
-@pytest.fixture(autouse=True)
-def _use_example_base_cv(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> None:
-    """Pointe le CV de base vers un fichier temporaire copié de l'exemple fictif."""
-    destination = tmp_path_factory.mktemp("base_cv") / "cv_base.json"
-    destination.write_text(
-        cv_renderer.BASE_CV_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    monkeypatch.setattr(cv_renderer, "BASE_CV_PATH", destination)
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +17,10 @@ def _no_remote_board_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> None:
-    """Les tests ne lisent ni n'écrivent jamais le vrai dossier data/ (réglages, compteurs)."""
+    """Les tests ne lisent ni n'écrivent jamais le vrai dossier data/ (réglages, compteurs, CV).
+
+    Le CV de base est résolu dans ce dossier temporaire, avec repli sur l'exemple fictif.
+    """
     monkeypatch.setenv(
         "ASSISTANT_CANDIDATURES_DATA_DIR", str(tmp_path_factory.mktemp("data_dir"))
     )

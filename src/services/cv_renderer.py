@@ -14,11 +14,11 @@ from urllib.parse import urlsplit
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 
+from src.config import get_data_dir
 from src.services.job_titles import extract_job_role
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-BASE_CV_PATH = PROJECT_DIR / "data" / "cv_base.json"
-BASE_CV_EXAMPLE_PATH = PROJECT_DIR / "data" / "cv_base.json.example"
+BUNDLED_CV_EXAMPLE_PATH = PROJECT_DIR / "data" / "cv_base.json.example"
 _DLL_DIRECTORY_HANDLES: list[object] = []
 REQUIRED_CV_FIELDS = (
     "name",
@@ -272,11 +272,24 @@ def prepare_cv_data(data: dict[str, Any]) -> dict[str, Any]:
     return prepared
 
 
+def get_base_cv_path() -> Path:
+    """Resolve the editable base CV inside the configured data directory, at call time."""
+    return get_data_dir() / "cv_base.json"
+
+
+def get_base_cv_example_path() -> Path:
+    """Fictitious example CV: the data directory's copy, else the one shipped with the project."""
+    configured = get_data_dir() / "cv_base.json.example"
+    return configured if configured.is_file() else BUNDLED_CV_EXAMPLE_PATH
+
+
 def load_base_cv_data() -> dict[str, Any]:
     """Load the local editable JSON CV data."""
-    if not BASE_CV_PATH.is_file() and BASE_CV_EXAMPLE_PATH.is_file():
-        return json.loads(BASE_CV_EXAMPLE_PATH.read_text(encoding="utf-8"))
-    return json.loads(BASE_CV_PATH.read_text(encoding="utf-8"))
+    base_path = get_base_cv_path()
+    example_path = get_base_cv_example_path()
+    if not base_path.is_file() and example_path.is_file():
+        return json.loads(example_path.read_text(encoding="utf-8"))
+    return json.loads(base_path.read_text(encoding="utf-8"))
 
 
 def validate_base_cv_json(content: str) -> str:
@@ -296,16 +309,16 @@ def validate_base_cv_json(content: str) -> str:
 def save_base_cv_json(content: str) -> str:
     """Validate and atomically replace the local base CV JSON."""
     normalized = validate_base_cv_json(content)
-    temporary_path = BASE_CV_PATH.with_suffix(".json.tmp")
+    base_path = get_base_cv_path()
+    base_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = base_path.with_suffix(".json.tmp")
     temporary_path.write_text(normalized + "\n", encoding="utf-8")
-    temporary_path.replace(BASE_CV_PATH)
+    temporary_path.replace(base_path)
     return normalized
 
 
 def render_base_cv_cli() -> None:
-    source_path = (
-        Path(sys.argv[1]) if len(sys.argv) > 1 else PROJECT_DIR / "data" / "cv_base.json"
-    )
+    source_path = Path(sys.argv[1]) if len(sys.argv) > 1 else get_base_cv_path()
     output_path = (
         Path(sys.argv[2]) if len(sys.argv) > 2 else PROJECT_DIR / "output" / "cv.pdf"
     )
