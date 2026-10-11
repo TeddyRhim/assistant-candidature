@@ -141,6 +141,9 @@ class JobOffer(Base):
     origin: Mapped[str] = mapped_column(
         String(20), nullable=False, default="Application", server_default="Application"
     )
+    read_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="Complète", server_default="Complète"
+    )
 
 
 class CompanyData(BaseModel):

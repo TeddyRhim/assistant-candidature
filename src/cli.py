@@ -18,6 +18,12 @@ from src.services.cv_curation import (
 )
 from src.services.daily_run import load_secrets_file, run_daily
 from src.services.job_titles import extract_job_role
+from src.services.offer_reading import (
+    ReadingError,
+    complete_read_offer,
+    list_offers_to_read,
+    mark_unreadable,
+)
 
 
 def _daily() -> int:
@@ -77,6 +83,34 @@ def _soigner(args: argparse.Namespace) -> int:
         return 1
 
 
+def _lire(args: argparse.Namespace) -> int:
+    """Annonces à lire : lister, compléter avec ce que Chrome a lu, ou marquer illisible."""
+    sys.stdout.reconfigure(encoding="utf-8")
+    engine = _open_engine()
+    try:
+        if args.action == "list":
+            offers = list_offers_to_read(engine)
+            if not offers:
+                print("Aucune annonce à lire.")
+            for offer in offers:
+                print(f"{offer.id[:8]}  {offer.url}")
+            return 0
+        offer = resolve_offer(engine, args.offer)
+        if args.action == "unreadable":
+            mark_unreadable(engine, offer.id, args.reason)
+            print(f"{offer.id[:8]} : marquée illisible.")
+            return 0
+        details = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        result = complete_read_offer(engine, offer.id, details, load_or_seed_profile(engine))
+        print(f"{offer.id[:8]} : annonce complétée, CV à soigner.")
+        if result.error:
+            print(f"Dossier incomplet : {result.error}")
+        return 0
+    except (CurationError, ReadingError, OSError, ValueError) as error:
+        print(f"Erreur : {error}")
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.cli")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -92,10 +126,23 @@ def main(argv: list[str] | None = None) -> int:
     state = actions.add_parser("state", help="change l'état du CV d'une offre")
     state.add_argument("offer")
     state.add_argument("state", choices=CV_STATES)
+    read = commands.add_parser("lire", help="annonces à lire avec le navigateur")
+    read_actions = read.add_subparsers(dest="action", required=True)
+    read_actions.add_parser("list", help="liens d'annonces non lus")
+    read_save = read_actions.add_parser("save", help="complète une annonce avec ce qui a été lu")
+    read_save.add_argument("offer")
+    read_save.add_argument(
+        "file", help="JSON : title, company, location, contract_type, description"
+    )
+    unreadable = read_actions.add_parser("unreadable", help="annonce impossible à lire")
+    unreadable.add_argument("offer")
+    unreadable.add_argument("reason")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     if args.command == "daily":
         return _daily()
+    if args.command == "lire":
+        return _lire(args)
     return _soigner(args)
 
 

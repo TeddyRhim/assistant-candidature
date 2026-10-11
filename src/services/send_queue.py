@@ -232,7 +232,10 @@ def build_send_queue(
         )
         offers = list(
             session.scalars(
-                select(JobOffer).where(JobOffer.status.in_(QUEUE_OFFER_STATUSES))
+                select(JobOffer).where(
+                    JobOffer.status.in_(QUEUE_OFFER_STATUSES),
+                    JobOffer.read_state == "Complète",
+                )
             )
         )
 
