@@ -100,6 +100,7 @@ from src.services.job_offers import (
     OfferNotFound,
     create_offer,
     delete_offer,
+    find_offer_by_url,
     get_offer,
     list_offers,
     update_offer,
@@ -790,7 +791,13 @@ def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
         )
         read_submitted = st.form_submit_button("Lire l'annonce")
 
-    if read_submitted:
+    existing = find_offer_by_url(engine, url) if read_submitted and url.strip() else None
+    if existing is not None:
+        st.warning(
+            f"Cette annonce est déjà enregistrée : « {existing.title} » ({existing.status}). "
+            "Rien n'a été ajouté."
+        )
+    elif read_submitted:
         try:
             with st.spinner("Lecture de l'annonce…"):
                 imported_offer = import_offer_from_url(url)

@@ -9,7 +9,6 @@ dossier est généré et son CV passe à « À soigner ».
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import ValidationError
 from sqlalchemy import Engine, select
@@ -19,13 +18,13 @@ from src.models import JobOffer, JobOfferData, ProfileData
 from src.services.cv_curation import CV_TO_CURATE, set_cv_state
 from src.services.dossier_generator import DossierResult, prepare_dossier_for_offer
 from src.services.job_offers import ORIGIN_MANUAL, create_offer
+from src.services.urls import clean_tracking
 
 READ_COMPLETE = "Complète"
 READ_TO_READ = "À lire"
 READ_UNREADABLE = "Illisible"
 READ_STATES = (READ_COMPLETE, READ_TO_READ, READ_UNREADABLE)
 
-_TRACKING_PARAMETERS = ("utm_", "xtor", "gclid", "fbclid", "mc_", "ref_src")
 UNREAD_PLACEHOLDER = (
     "Annonce non lue automatiquement : {reason} "
     "Lance le skill lire-annonces dans Claude Code pour la lire avec ton navigateur."
@@ -34,17 +33,6 @@ UNREAD_PLACEHOLDER = (
 
 class ReadingError(ValueError):
     """La lecture complétée est refusée ou l'offre est introuvable."""
-
-
-def clean_tracking(url: str) -> str:
-    """Retire les paramètres de suivi (utm_*, xtor, gclid…) d'un lien d'annonce."""
-    parts = urlsplit(url)
-    kept = [
-        (name, value)
-        for name, value in parse_qsl(parts.query, keep_blank_values=True)
-        if not name.casefold().startswith(_TRACKING_PARAMETERS)
-    ]
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
 
 
 def store_unread_offer(engine: Engine, url: str, host: str, reason: str) -> JobOffer:

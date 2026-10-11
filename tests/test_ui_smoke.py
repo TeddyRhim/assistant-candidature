@@ -249,3 +249,23 @@ def test_unreadable_link_is_stored_for_later_reading(
 
     at = AppTest.from_file(APP_PATH, default_timeout=60).run()
     assert any("annonce(s) à lire" in str(info.value) for info in at.info)
+
+
+def test_link_already_saved_is_reported_without_reading_it(
+    seeded_data: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.services import offer_import
+
+    def must_not_read(url: str):
+        raise AssertionError("un lien déjà enregistré ne doit pas être relu")
+
+    monkeypatch.setattr(offer_import, "import_offer_from_url", must_not_read)
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    next(box for box in at.text_input if box.label == "Lien de l'annonce").set_value(
+        "http://www.example.com/offre/1/?utm_source=partage"
+    )
+    next(button for button in at.button if button.label == "Lire l'annonce").click().run()
+
+    assert not at.exception
+    assert any("déjà enregistrée" in str(warning.value) for warning in at.warning)

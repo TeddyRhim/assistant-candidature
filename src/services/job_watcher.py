@@ -44,6 +44,7 @@ from src.services.job_sources.remote_common import remote_search_terms
 from src.services.job_sources.remoteok import REMOTEOK_SOURCE_NAME, search_remoteok
 from src.services.matching import assess_offer_fit, title_mentions_profile_technology
 from src.services.recent_applications import recent_application_keys, was_recently_applied
+from src.services.urls import normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -276,12 +277,6 @@ def offer_identity_key(title: str, company: str | None, location: str | None) ->
     return "|".join(_normalize_key_part(part) for part in (title, company, location))
 
 
-def _is_url_already_in_db(session: Session, url: str) -> bool:
-    if not url:
-        return False
-    return session.scalar(select(JobOffer.id).where(JobOffer.url == url)) is not None
-
-
 def run_watcher_cycle(
     engine: Engine,
     profile: ProfileData,
@@ -415,9 +410,14 @@ def run_watcher_cycle(
                 select(JobOffer.title, JobOffer.company, JobOffer.location)
             )
         }
+        known_urls = {
+            normalize_url(url)
+            for url in session.scalars(select(JobOffer.url).where(JobOffer.url.is_not(None)))
+            if url
+        }
         for listing in collected_listings:
             listing_url = str(listing.original_url) if listing.original_url else ""
-            if _is_url_already_in_db(session, listing_url):
+            if listing_url and normalize_url(listing_url) in known_urls:
                 result.duplicates_skipped += 1
                 continue
 
@@ -488,6 +488,8 @@ def run_watcher_cycle(
                     )
                     created_offer = create_offer(engine, offer_to_save)
                     known_keys.add(identity)
+                    if listing_url:
+                        known_urls.add(normalize_url(listing_url))
                     result.new_offers_imported += 1
                     company_name = temp_offer.company or "Entreprise inconnue"
                     result.imported_offer_titles.append(
