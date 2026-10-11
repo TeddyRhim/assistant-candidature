@@ -7,6 +7,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from src.models import Application, Company, JobOffer, JobOfferData
+from src.services.urls import normalize_url
 
 
 class DuplicateOfferURL(ValueError):
@@ -17,18 +18,37 @@ class OfferNotFound(LookupError):
     """The requested offer does not exist."""
 
 
+def _find_by_url(
+    session: Session, url: str | None, excluding_offer_id: str | None = None
+) -> JobOffer | None:
+    """Offre déjà enregistrée pour ce lien, en ignorant le suivi, www, la barre finale…"""
+    if not url or not url.strip():
+        return None
+    wanted = normalize_url(url)
+    query = select(JobOffer).where(JobOffer.url.is_not(None))
+    if excluding_offer_id is not None:
+        query = query.where(JobOffer.id != excluding_offer_id)
+    for offer in session.scalars(query):
+        if normalize_url(offer.url) == wanted:
+            return offer
+    return None
+
+
+def find_offer_by_url(engine: Engine, url: str) -> JobOffer | None:
+    with Session(engine) as session:
+        return _find_by_url(session, url)
+
+
 def _ensure_unique_url(
     session: Session,
     url: str | None,
     excluding_offer_id: str | None = None,
 ) -> None:
-    if url is None:
-        return
-    query = select(JobOffer.id).where(JobOffer.url == url)
-    if excluding_offer_id is not None:
-        query = query.where(JobOffer.id != excluding_offer_id)
-    if session.scalar(query) is not None:
-        raise DuplicateOfferURL("Une offre avec cette URL existe déjà.")
+    existing = _find_by_url(session, url, excluding_offer_id)
+    if existing is not None:
+        raise DuplicateOfferURL(
+            f"Cette annonce est déjà enregistrée : « {existing.title} » ({existing.status})."
+        )
 
 
 def _resolve_company_id(

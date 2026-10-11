@@ -7,6 +7,7 @@ Application locale (Python, Streamlit, SQLAlchemy et SQLite) d'aide à la recher
 - Interface : `uv run streamlit run src/app.py`.
 - Veille (collecte quotidienne) : `uv run python -m src.cli daily`, ou le bouton de la page Veille. Code retour 1 si le profil est incomplet.
 - File des CV à soigner : `uv run python -m src.cli soigner list|show <id>|save <id> <fichier.json>|state <id> <état>`, pilotée par le skill local `soigner-cv` (`.claude/skills/`, non versionné).
+- Annonces illisibles : `uv run python -m src.cli lire list|save <id> <fichier.json>|unreadable <id> <raison>`, pilotée par le skill local `lire-annonces` (Chrome de l'utilisateur), qui enchaîne sur `soigner-cv`.
 - Tests : `uv run pytest`. Lint : `uv run ruff check .` (longueur de ligne 100, règles E, F, I, UP, Python 3.11). La CI GitHub exécute les deux.
 - CV autonome : `uv run python render.py [entrée.json sortie.pdf]`.
 - Tâche planifiée Windows (facultative, non utilisée par défaut) : `scripts/install_daily_task.ps1`.
@@ -19,7 +20,7 @@ Ne jamais remettre à zéro le compteur de quota Jooble sans raison. Adzuna : un
 
 ## Structure
 - `src/app.py` (interface, très long), `src/cli.py`, `src/config.py`, `src/db.py`, `src/models.py`.
-- `src/services` : `job_watcher.py` (cycle de veille, filtres, doublons), `daily_run.py`, `matching.py`, `job_titles.py`, `send_queue.py`, `dossier_generator.py`, `tailored_resumes.py`, `offer_keywords.py` (mots de l'annonce, adaptation du CV), `recent_applications.py` (offres déjà visées cette semaine), `cv_curation.py` (état du CV : Automatique, À soigner, Soigné, et contrôle anti-invention), `cv_renderer.py` (Jinja2 et WeasyPrint), `cover_letters.py`, `applications.py`, `email_delivery.py`.
+- `src/services` : `job_watcher.py` (cycle de veille, filtres, doublons), `daily_run.py`, `matching.py`, `job_titles.py`, `send_queue.py`, `dossier_generator.py`, `tailored_resumes.py`, `offer_keywords.py` (mots de l'annonce, adaptation du CV), `recent_applications.py` (offres déjà visées cette semaine), `urls.py` (normalisation des liens), `offer_reading.py` (liens d'annonces illisibles gardés « À lire »), `cv_curation.py` (état du CV : Automatique, À soigner, Soigné, et contrôle anti-invention), `cv_renderer.py` (Jinja2 et WeasyPrint), `cover_letters.py`, `applications.py`, `email_delivery.py`.
 - `src/services/job_sources` : un connecteur par source (Adzuna, France Travail, Jooble, Himalayas et RemoteOK, Greenhouse, Lever, La Bonne Boîte).
 - `templates/` (CV, lettre), `docs/` (architecture, sources, feuille de route), `tests/`.
 
@@ -33,6 +34,8 @@ Ne jamais remettre à zéro le compteur de quota Jooble sans raison. Adzuna : un
 - Les exclusions personnelles, la zone prioritaire, le seuil de score et les interrupteurs par source se règlent dans la page Veille ou dans `data/watcher_config.json`, jamais en dur dans le code ni dans les tests.
 - Filtres : titres de stage et d'alternance, rôles hors développement, contrats exclus, annonces ni en français ni en anglais, score sous le seuil. Doublons : même URL ou même clé normalisée (titre, entreprise, lieu).
 - Une offre dont l'entreprise et le poste correspondent à une candidature envoyée dans les 7 derniers jours est ignorée par la veille et masquée de la file d'envoi.
+- Un même lien n'est jamais enregistré deux fois : la comparaison ignore http/https, www, majuscules, barre finale, ancre, paramètres de suivi (utm_*, xtor, gclid…) et l'ordre des paramètres ; Adzuna se compare au chemin seul. Le contrôle vaut pour la création, la modification, le formulaire de lien (avant toute lecture) et la veille.
+- Un lien dont la page n'a pas pu être lue (HTTP 403, contenu masqué) est gardé avec l'état de lecture « À lire », sans suivi de tracking, et reste hors de la file d'envoi tant que `lire save` ne l'a pas complété. Une offre complétée passe à « Complète », son dossier est généré et son CV passe à « À soigner ».
 - Chaque offre a une origine (`origin` : Application ou Manuel). Ce que l'utilisateur saisit (formulaire ou lien) est « Manuel » ; la veille et les recherches sont « Application ». La file d'envoi les sépare en onglets, et la page Offres a un filtre.
 - Une offre ajoutée à la main (formulaire ou lien) passe à l'état de CV « À soigner » ; celles de la veille restent « Automatique ». L'application ne gère que l'état ; le skill `soigner-cv` rédige le JSON, `soigner save` le refuse s'il contient un terme technique, un chiffre ou un fait absent du CV de base, puis l'état passe à « Soigné ». Compléter le texte d'une annonce régénère le CV et remet l'état à « À soigner ».
 - Le CV adapté ne fait que réordonner, réduire (6 puces par expérience au plus) et mettre en gras ce que le CV contient déjà ; un mot demandé mais absent n'est jamais ajouté, seulement signalé.

@@ -100,6 +100,7 @@ from src.services.job_offers import (
     OfferNotFound,
     create_offer,
     delete_offer,
+    find_offer_by_url,
     get_offer,
     list_offers,
     update_offer,
@@ -175,8 +176,12 @@ from src.services.matching import (
     compare_offer_to_profile,
     search_languages,
 )
-from src.services.offer_import import OfferImportError, import_offer_from_url
+from src.services.offer_import import OfferImportError, OfferUnreadable, import_offer_from_url
 from src.services.offer_keywords import KeywordReport, keyword_report
+from src.services.offer_reading import (
+    list_offers_to_read,
+    store_unread_offer,
+)
 from src.services.resume_import import (
     ResumeImportError,
     extract_resume_text,
@@ -283,6 +288,12 @@ def show_home(engine: Engine, profile: ProfileData) -> None:
         st.subheader(f"À relancer ({len(due)})")
         _show_follow_ups(engine, limit=3, heading=False)
 
+    to_read = list_offers_to_read(engine)
+    if to_read:
+        st.info(
+            f"{len(to_read)} annonce(s) à lire. Dans Claude Code, lance le skill "
+            "lire-annonces : ton Chrome lit les pages, puis lance soigner-cv."
+        )
     to_curate = list_offers_to_curate(engine)
     if to_curate:
         st.info(
@@ -701,7 +712,10 @@ def _offer_form(
 def _show_cv_state_control(engine: Engine, offer) -> None:
     """État du CV (Automatique, À soigner, Soigné) et bascule vers la file à soigner."""
     columns = st.columns([3, 2], vertical_alignment="center")
-    columns[0].caption(f"CV : {offer.cv_state}")
+    if offer.read_state != "Complète":
+        columns[0].caption(f"Annonce : {offer.read_state.lower()} · CV : {offer.cv_state}")
+    else:
+        columns[0].caption(f"CV : {offer.cv_state}")
     if offer.cv_state == CV_TO_CURATE:
         label, target = "Retirer de la file à soigner", CV_AUTOMATIC
     else:
@@ -777,10 +791,28 @@ def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
         )
         read_submitted = st.form_submit_button("Lire l'annonce")
 
-    if read_submitted:
+    existing = find_offer_by_url(engine, url) if read_submitted and url.strip() else None
+    if existing is not None:
+        st.warning(
+            f"Cette annonce est déjà enregistrée : « {existing.title} » ({existing.status}). "
+            "Rien n'a été ajouté."
+        )
+    elif read_submitted:
         try:
             with st.spinner("Lecture de l'annonce…"):
                 imported_offer = import_offer_from_url(url)
+        except OfferUnreadable as error:
+            try:
+                store_unread_offer(engine, error.url, error.host, str(error))
+            except DuplicateOfferURL as duplicate:
+                st.error(str(duplicate))
+            else:
+                st.session_state["offer_flash"] = {
+                    "message": "Le site n'a pas pu être lu automatiquement : le lien est "
+                    "gardé dans « Annonces à lire ». Lance le skill lire-annonces dans "
+                    "Claude Code pour que ton Chrome la lise, puis soigner-cv."
+                }
+                st.rerun()
         except OfferImportError as error:
             st.error(str(error))
         else:
@@ -4135,6 +4167,15 @@ def _show_offers_queue(engine: Engine, profile: ProfileData, *, group: str) -> N
             "Les offres que tu as ajoutées toi-même, par formulaire ou par lien. Elles sont "
             "toutes affichées, sans seuil de score."
         )
+        unread = list_offers_to_read(engine)
+        if unread:
+            with st.expander(f"Annonces à lire ({len(unread)})", expanded=True):
+                st.caption(
+                    "Ces liens n'ont pas pu être lus automatiquement. Lance le skill "
+                    "lire-annonces dans Claude Code : ton Chrome les lit et complète les offres."
+                )
+                for offer in unread:
+                    st.markdown(f"- [{offer.url}]({offer.url})")
     else:
         st.caption("Les offres trouvées par la veille et les recherches de l'application.")
     controls = st.columns(2)

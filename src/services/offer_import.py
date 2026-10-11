@@ -24,6 +24,15 @@ class OfferImportError(RuntimeError):
     """An announcement could not safely be retrieved or parsed."""
 
 
+class OfferUnreadable(OfferImportError):
+    """L'adresse est valide mais la page n'a pas pu être lue : on peut garder le lien."""
+
+    def __init__(self, message: str, url: str, host: str) -> None:
+        super().__init__(message)
+        self.url = url
+        self.host = host
+
+
 class _PublicRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, new_url):
         target = urljoin(request.full_url, new_url)
@@ -155,21 +164,22 @@ def import_offer_from_url(url: str) -> JobOfferData:
             _validate_public_url(response.geturl())
             content_type = response.headers.get_content_type().casefold()
             if content_type not in {"text/html", "application/xhtml+xml"}:
-                raise OfferImportError(
-                    "Le lien ne renvoie pas une page HTML lisible. "
-                    "Tu peux toujours saisir l'annonce manuellement."
+                raise OfferUnreadable(
+                    "Le lien ne renvoie pas une page HTML lisible.", normalized_url, host
                 )
             payload = response.read(MAX_PAGE_BYTES + 1)
             charset = response.headers.get_content_charset() or "utf-8"
     except OfferImportError:
         raise
     except HTTPError as error:
-        raise OfferImportError(
-            f"Le site a refusé la lecture de l'annonce (HTTP {error.code})."
+        raise OfferUnreadable(
+            f"Le site a refusé la lecture de l'annonce (HTTP {error.code}).",
+            normalized_url,
+            host,
         ) from error
     except (URLError, TimeoutError, OSError) as error:
-        raise OfferImportError(
-            f"Impossible de lire l'annonce depuis ce site : {error}."
+        raise OfferUnreadable(
+            f"Impossible de lire l'annonce depuis ce site : {error}.", normalized_url, host
         ) from error
 
     if len(payload) > MAX_PAGE_BYTES:
@@ -196,9 +206,11 @@ def import_offer_from_url(url: str) -> JobOfferData:
     )
     description = _clean_text([description])[:MAX_DESCRIPTION_CHARACTERS]
     if not title.strip() or not description:
-        raise OfferImportError(
+        raise OfferUnreadable(
             "La page ne contient pas assez d'informations exploitables pour créer une offre. "
-            "Le site masque peut-être son contenu ou nécessite une connexion."
+            "Le site masque peut-être son contenu ou nécessite une connexion.",
+            normalized_url,
+            host,
         )
     company = _organization_name(structured.get("hiringOrganization"))
     location = _job_location(structured.get("jobLocation"))

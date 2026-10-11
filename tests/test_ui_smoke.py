@@ -221,3 +221,51 @@ def test_queue_separates_my_offers_from_imported_ones(seeded_data: Path) -> None
     assert any(key.startswith("queue_open_") for key in manual_buttons)
     assert any(key.startswith("queue_open_") for key in imported_buttons)
     assert not set(manual_buttons) & set(imported_buttons)
+
+
+def test_unreadable_link_is_stored_for_later_reading(
+    seeded_data: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.services import offer_import
+    from src.services.offer_reading import list_offers_to_read
+
+    def unreadable(url: str):
+        raise offer_import.OfferUnreadable("Le site a refusé (HTTP 403).", url, "www.apec.fr")
+
+    monkeypatch.setattr(offer_import, "import_offer_from_url", unreadable)
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    next(box for box in at.text_input if box.label == "Lien de l'annonce").set_value(
+        "https://www.apec.fr/candidat/detail-offre/1?utm_source=x"
+    )
+    next(button for button in at.button if button.label == "Lire l'annonce").click().run()
+    assert not at.exception
+    assert any("Annonces à lire" in str(success.value) for success in at.success)
+
+    engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
+    [stored] = list_offers_to_read(engine)
+    assert stored.url == "https://www.apec.fr/candidat/detail-offre/1"
+    engine.dispose()
+
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    assert any("annonce(s) à lire" in str(info.value) for info in at.info)
+
+
+def test_link_already_saved_is_reported_without_reading_it(
+    seeded_data: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.services import offer_import
+
+    def must_not_read(url: str):
+        raise AssertionError("un lien déjà enregistré ne doit pas être relu")
+
+    monkeypatch.setattr(offer_import, "import_offer_from_url", must_not_read)
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    next(box for box in at.text_input if box.label == "Lien de l'annonce").set_value(
+        "http://www.example.com/offre/1/?utm_source=partage"
+    )
+    next(button for button in at.button if button.label == "Lire l'annonce").click().run()
+
+    assert not at.exception
+    assert any("déjà enregistrée" in str(warning.value) for warning in at.warning)

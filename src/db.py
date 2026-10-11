@@ -58,6 +58,12 @@ def _migrate_database(engine: Engine) -> None:
                 "WHERE source = 'Saisie manuelle' OR source LIKE 'Import URL%'"
             )
             raw_connection.commit()
+        if columns and "read_state" not in columns:
+            cursor.execute(
+                "ALTER TABLE job_offers ADD COLUMN read_state VARCHAR(20) "
+                "NOT NULL DEFAULT 'Complète'"
+            )
+            raw_connection.commit()
         cursor.execute("PRAGMA table_info(applications)")
         application_columns = [row[1] for row in cursor.fetchall()]
         if application_columns and "prep_seconds" not in application_columns:
