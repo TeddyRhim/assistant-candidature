@@ -2444,7 +2444,8 @@ def _show_single_tailored_resume_page(engine: Engine, profile: ProfileData) -> N
         return
 
     st.caption(
-        "Le brouillon part de data/cv_base.json, au format ATS à une colonne. Le CV de "
+        "Le brouillon part de cv_base.json (dossier data/ par défaut), au format ATS à une "
+        "colonne. Le CV de "
         "référence sélectionné est associé au suivi ; les données affichées et rendues viennent "
         "du JSON modifiable ci-dessous. L'en-tête du PDF n'affiche que le nom de l'entreprise, "
         "sans ville ni lien vers l'annonce."

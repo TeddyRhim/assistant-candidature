@@ -96,7 +96,7 @@ uv run python render.py                      # data/cv_base.json -> output/cv.pd
 uv run python render.py data/autre.json output/autre.pdf
 ```
 
-Le rendu utilise Jinja2 et WeasyPrint. Sous Windows, WeasyPrint demande les bibliothèques GTK3/Pango ; définis `WEASYPRINT_DLL_DIRECTORIES` si elles ne sont pas détectées. Un exemple de données est fourni dans `data/cv_base.json.example`.
+Le rendu utilise Jinja2 et WeasyPrint. Sous Windows, WeasyPrint demande les bibliothèques GTK3/Pango ; définis `WEASYPRINT_DLL_DIRECTORIES` si elles ne sont pas détectées. Un exemple de données est fourni dans `data/cv_base.json.example`. Le CV de base est lu et enregistré dans le dossier de données (`data/` par défaut, ou `ASSISTANT_CANDIDATURES_DATA_DIR` si la variable est définie).
 
 ## Développement
 
