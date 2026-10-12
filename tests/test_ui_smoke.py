@@ -295,3 +295,29 @@ def test_offer_is_kept_and_page_stays_usable_when_dossier_generation_crashes(
     engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
     assert any(offer.title == "Développeur Symfony H/F" for offer in list_offers(engine))
     engine.dispose()
+
+
+def test_offers_page_shows_a_first_page_of_offers_and_can_show_all(seeded_data: Path) -> None:
+    engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
+    for number in range(30):
+        create_offer(
+            engine,
+            JobOfferData(
+                title=f"Développeur PHP numéro {number}",
+                company="Atelier Tech",
+                location="Nice",
+                url=f"https://example.com/lot/{number}",
+                description="PHP et Symfony pour notre équipe.",
+            ),
+        )
+    engine.dispose()
+
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    assert not at.exception
+    offer_expanders = [box for box in at.expander if "Développeur PHP" in box.label]
+    assert len(offer_expanders) == 25
+    assert any("non affichée" in str(caption.value) for caption in at.caption)
+
+    next(box for box in at.selectbox if box.key == "offers_page_size").select(0).run()
+    assert not any("non affichée" in str(caption.value) for caption in at.caption)

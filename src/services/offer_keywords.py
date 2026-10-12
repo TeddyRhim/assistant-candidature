@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from src.models import JobOfferData, ProfileData
@@ -126,6 +127,7 @@ def extract_offer_keywords(offer: JobOfferData) -> list[OfferKeyword]:
     return [keyword for _position, keyword in keywords]
 
 
+@lru_cache(maxsize=512)
 def _alias_pattern(aliases: tuple[str, ...]) -> re.Pattern[str]:
     phrases = sorted(
         (r"\s+".join(re.escape(part) for part in alias.split()) for alias in aliases),

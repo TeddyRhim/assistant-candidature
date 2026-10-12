@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 from src.models import (
     Company,
@@ -273,12 +274,26 @@ def _is_php_currency(alias: str, line: str, match: re.Match[str]) -> bool:
     )
 
 
+@lru_cache(maxsize=512)
+def _technology_pattern(alias: str) -> re.Pattern[str]:
+    phrase = r"\s+".join(re.escape(part) for part in alias.split())
+    # « node.js » ne doit pas compter comme « js » : on exclut les points collés.
+    return re.compile(rf"(?<![\w.#+]){phrase}(?![\w#+])", re.IGNORECASE)
+
+
+@lru_cache(maxsize=512)
+def _skill_pattern(alias: str) -> re.Pattern[str]:
+    phrase = r"\s+".join(re.escape(part) for part in alias.split())
+    return re.compile(rf"(?<!\w){phrase}(?!\w)", re.IGNORECASE)
+
+
+# Le calcul est pur : la même annonce rejouée à chaque rafraîchissement de la page donne le même
+# résultat, on le garde en mémoire (sans cela la page Offres mettait plusieurs secondes).
+@lru_cache(maxsize=65536)
 def _find_technology_evidence(text: str, technology: Technology) -> str | None:
     for line in text.splitlines():
         for alias in technology.aliases:
-            phrase = r"\s+".join(re.escape(part) for part in alias.split())
-            # « node.js » ne doit pas compter comme « js » : on exclut les points collés.
-            for match in re.finditer(rf"(?<![\w.#+]){phrase}(?![\w#+])", line, re.IGNORECASE):
+            for match in _technology_pattern(alias).finditer(line):
                 if _is_php_currency(alias, line, match):
                     continue
                 start = max(0, match.start() - 50)
@@ -489,13 +504,12 @@ def is_remote_offer(offer: JobOfferData) -> bool:
     )
 
 
+@lru_cache(maxsize=65536)
 def _find_evidence(description: str, skill_name: str) -> str | None:
     aliases = SKILL_ALIASES.get(_normalize_skill_name(skill_name), (skill_name,))
     for line in description.splitlines():
         for alias in aliases:
-            phrase = r"\s+".join(re.escape(part) for part in alias.split())
-            pattern = re.compile(rf"(?<!\w){phrase}(?!\w)", re.IGNORECASE)
-            for match in pattern.finditer(line):
+            for match in _skill_pattern(alias).finditer(line):
                 if _is_php_currency(alias, line, match):
                     continue
                 start = max(0, match.start() - 50)
@@ -513,6 +527,7 @@ def find_skill_evidence(description: str, skill_name: str) -> str | None:
     return _find_evidence(description, skill_name)
 
 
+@lru_cache(maxsize=4096)
 def _normalize_skill_name(value: str) -> str:
     return re.sub(r"[^a-z0-9+#.]", "", value.casefold())
 
@@ -568,15 +583,12 @@ def _evidence_priority(evidence: str, skill_name: str) -> tuple[str, float]:
     return _priority_for_aliases(evidence, aliases)
 
 
+@lru_cache(maxsize=65536)
 def _priority_for_aliases(evidence: str, aliases: tuple[str, ...]) -> tuple[str, float]:
     segments = re.split(r"(?<=[.!?;])\s+", evidence)
 
     def segment_mentions_skill(segment: str) -> bool:
-        for alias in aliases:
-            phrase = r"\s+".join(re.escape(part) for part in alias.split())
-            if re.search(rf"(?<!\w){phrase}(?!\w)", segment, re.IGNORECASE):
-                return True
-        return False
+        return any(_skill_pattern(alias).search(segment) for alias in aliases)
 
     relevant_segment = next(
         (segment for segment in segments if segment_mentions_skill(segment)),
