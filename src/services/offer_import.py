@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import http.client
 import json
 import socket
 import ssl
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from html import unescape
 from html.parser import HTMLParser
 from ipaddress import ip_address
@@ -19,7 +22,8 @@ MAX_PAGE_BYTES = 3_000_000
 MAX_DESCRIPTION_CHARACTERS = 100_000
 # En dessous, la page n'a donné qu'un résumé (ex. « Apply for… » de LinkedIn) : à lire à la main.
 MIN_USEFUL_DESCRIPTION = 200
-REQUEST_TIMEOUT_SECONDS = 20
+REQUEST_TIMEOUT_SECONDS = 15
+TOTAL_TIMEOUT_SECONDS = 25
 USER_AGENT = "assistant-candidatures/0.1 (user-initiated offer import)"
 
 
@@ -148,6 +152,38 @@ class _AnnouncementParser(HTMLParser):
 
 
 def import_offer_from_url(url: str) -> JobOfferData:
+    """Lit une annonce, sans jamais bloquer l'application plus de `TOTAL_TIMEOUT_SECONDS`.
+
+    Un site lent (réponse goutte à goutte, résolution DNS qui traîne) arrêterait sinon l'interface
+    jusqu'au rechargement de la page. Au-delà du délai, ou si la lecture échoue de façon
+    inattendue, le lien est signalé illisible pour être gardé et lu autrement.
+    """
+    try:
+        normalized_url = str(AnyHttpUrl(url.strip()))
+    except (ValidationError, AttributeError) as error:
+        raise OfferImportError("Saisis une URL HTTP ou HTTPS valide.") from error
+    host = urlsplit(normalized_url).hostname or ""
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_import_offer_from_url, url)
+    try:
+        return future.result(timeout=TOTAL_TIMEOUT_SECONDS)
+    except FutureTimeout:
+        raise OfferUnreadable(
+            "Le site met trop de temps à répondre.", normalized_url, host
+        ) from None
+    except OfferImportError:
+        raise
+    except Exception as error:
+        raise OfferUnreadable(
+            f"La lecture a échoué de façon inattendue ({type(error).__name__}).",
+            normalized_url,
+            host,
+        ) from error
+    finally:
+        executor.shutdown(wait=False)
+
+
+def _import_offer_from_url(url: str) -> JobOfferData:
     normalized_url = _normalize_public_url(url)
     host = urlsplit(normalized_url).hostname or ""
     request = Request(
@@ -180,7 +216,7 @@ def import_offer_from_url(url: str) -> JobOfferData:
             normalized_url,
             host,
         ) from error
-    except (URLError, TimeoutError, OSError) as error:
+    except (URLError, TimeoutError, OSError, http.client.HTTPException) as error:
         raise OfferUnreadable(
             f"Impossible de lire l'annonce depuis ce site : {error}.", normalized_url, host
         ) from error

@@ -269,3 +269,29 @@ def test_link_already_saved_is_reported_without_reading_it(
 
     assert not at.exception
     assert any("déjà enregistrée" in str(warning.value) for warning in at.warning)
+
+
+def test_offer_is_kept_and_page_stays_usable_when_dossier_generation_crashes(
+    seeded_data: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.services import dossier_generator
+
+    def crash(*_args, **_kwargs):
+        raise KeyError("experience")
+
+    monkeypatch.setattr(dossier_generator, "prepare_dossier_for_offer", crash)
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "offres")
+    next(box for box in at.text_input if box.label == "Intitulé du poste").set_value(
+        "Développeur Symfony H/F"
+    )
+    next(box for box in at.text_area if box.label == "Description de l'annonce").set_value(
+        "Nous cherchons un développeur PHP et Symfony. API REST et SQL requis."
+    )
+    next(button for button in at.button if button.label == "Enregistrer l'offre").click().run()
+
+    assert not at.exception
+    assert any("Dossier non préparé" in str(success.value) for success in at.success)
+    engine = create_database_engine(seeded_data / "assistant-candidatures.sqlite3")
+    assert any(offer.title == "Développeur Symfony H/F" for offer in list_offers(engine))
+    engine.dispose()
