@@ -152,3 +152,53 @@ def test_import_treats_a_one_line_summary_as_unreadable() -> None:
 
     with pytest.raises(OfferUnreadable):
         _import(body)
+
+
+def test_a_slow_site_cannot_block_the_import_beyond_the_total_deadline() -> None:
+    import time
+
+    class _SlowOpener:
+        def open(self, *_args: object, **_kwargs: object):
+            time.sleep(2)
+            raise AssertionError("la lecture aurait dû être abandonnée")
+
+    started = time.monotonic()
+    with (
+        patch("src.services.offer_import.TOTAL_TIMEOUT_SECONDS", 0.2),
+        patch("src.services.offer_import._validate_public_url"),
+        patch("src.services.offer_import.build_opener", return_value=_SlowOpener()),
+        pytest.raises(OfferUnreadable) as caught,
+    ):
+        import_offer_from_url("https://jobs.example.org/role")
+
+    assert time.monotonic() - started < 1.5
+    assert "trop de temps" in str(caught.value)
+    assert caught.value.host == "jobs.example.org"
+
+
+def test_an_unexpected_failure_while_reading_keeps_the_link_instead_of_crashing() -> None:
+    import http.client
+
+    class _BrokenResponse(_FakeResponse):
+        def read(self, size: int = -1) -> bytes:
+            raise http.client.IncompleteRead(b"abc")
+
+    with (
+        patch("src.services.offer_import._validate_public_url"),
+        patch(
+            "src.services.offer_import.build_opener",
+            return_value=_FakeOpener(_BrokenResponse(b"")),
+        ),
+        pytest.raises(OfferUnreadable),
+    ):
+        import_offer_from_url("https://jobs.example.org/role")
+
+
+def test_a_programming_error_in_the_reader_is_reported_as_unreadable() -> None:
+    with (
+        patch("src.services.offer_import._import_offer_from_url", side_effect=KeyError("x")),
+        pytest.raises(OfferUnreadable) as caught,
+    ):
+        import_offer_from_url("https://jobs.example.org/role")
+
+    assert "KeyError" in str(caught.value)

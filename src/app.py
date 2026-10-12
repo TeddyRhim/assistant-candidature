@@ -758,8 +758,19 @@ def _prepare_adapted_dossier(
     *,
     to_curate: bool = False,
 ) -> dict[str, object]:
-    """Génère le CV adapté et la lettre d'une offre qu'on vient d'ajouter, et le rapport."""
-    result = prepare_dossier_for_offer(engine, offer_id, offer_data, profile)
+    """Génère le CV adapté et la lettre d'une offre qu'on vient d'ajouter, et le rapport.
+
+    L'offre est déjà enregistrée : une erreur de génération est rapportée, jamais propagée.
+    """
+    try:
+        result = prepare_dossier_for_offer(engine, offer_id, offer_data, profile)
+    except Exception as error:  # noqa: BLE001
+        if to_curate:
+            set_cv_state(engine, offer_id, CV_TO_CURATE)
+        return {
+            "message": "Offre enregistrée. Dossier non préparé "
+            f"({type(error).__name__}) : prépare-le depuis « CV par offre »."
+        }
     if result.error:
         return {"message": f"Offre enregistrée. Dossier non préparé : {result.error}"}
     resume = get_tailored_resume(engine, offer_id)
@@ -817,6 +828,8 @@ def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
                 st.rerun()
         except OfferImportError as error:
             st.error(str(error))
+        except Exception as error:  # noqa: BLE001
+            st.error(f"Lecture impossible ({type(error).__name__}). Réessaie ou saisis l'annonce.")
         else:
             for key in (
                 "offer_import_title",
