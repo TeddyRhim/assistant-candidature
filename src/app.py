@@ -913,6 +913,9 @@ def _offer_link_import_ui(engine: Engine, profile: ProfileData) -> None:
         st.rerun()
 
 
+OFFERS_PAGE_SIZES = [25, 50, 100, 0]
+
+
 def show_offers_page(engine: Engine, profile: ProfileData) -> None:
     st.title("Offres d'emploi")
     st.write(
@@ -992,7 +995,21 @@ def show_offers_page(engine: Engine, profile: ProfileData) -> None:
         ),
         reverse=True,
     )
-    for offer, offer_data, fit in scored_offers:
+    page_size = st.selectbox(
+        "Offres affichées",
+        options=OFFERS_PAGE_SIZES,
+        index=0,
+        format_func=lambda size: "Toutes" if size == 0 else str(size),
+        key="offers_page_size",
+        help="Afficher moins d'offres rend la page plus rapide.",
+    )
+    shown_offers = scored_offers[:page_size] if page_size else scored_offers
+    if len(shown_offers) < len(scored_offers):
+        st.caption(
+            f"{len(scored_offers) - len(shown_offers)} offre(s) moins bien classée(s) non "
+            "affichée(s) : choisis « Toutes » pour les voir."
+        )
+    for offer, offer_data, fit in shown_offers:
         heading = " — ".join(part for part in (offer.title, offer.company) if part)
         score_label = (
             f"{fit.overall_percentage}% · "

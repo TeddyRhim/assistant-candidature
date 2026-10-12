@@ -361,3 +361,25 @@ def test_search_registry_candidate_data_can_be_assessed_before_saving() -> None:
 
     assert result.activity_is_software is True
     assert result.activity_label.endswith("(62.01Z)")
+
+
+def test_repeated_scoring_of_the_same_offer_reuses_the_cached_evidence() -> None:
+    from src.services import matching
+
+    offer = JobOfferData(
+        title="Développeur PHP Symfony H/F",
+        company="Atelier Tech",
+        location="Nice",
+        description="PHP 8, Symfony et API REST pour un produit SaaS.",
+    )
+    profile = ProfileData(
+        target_role="Développeur backend",
+        skills=[SkillRating(name="PHP", category="Forte", level_min=8, level_max=8)],
+    )
+    first = matching.assess_offer_fit(offer, profile)
+    hits_before = matching._find_technology_evidence.cache_info().hits
+
+    second = matching.assess_offer_fit(offer, profile)
+
+    assert second == first
+    assert matching._find_technology_evidence.cache_info().hits > hits_before
