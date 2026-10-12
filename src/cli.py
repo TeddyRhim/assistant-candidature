@@ -17,6 +17,7 @@ from src.services.cv_curation import (
     set_cv_state,
 )
 from src.services.daily_run import load_secrets_file, run_daily
+from src.services.data_repair import repair_legacy_data
 from src.services.job_titles import extract_job_role
 from src.services.offer_reading import (
     ReadingError,
@@ -45,6 +46,7 @@ def _daily() -> int:
 def _open_engine():
     engine = create_database_engine()
     initialize_database(engine)
+    repair_legacy_data(engine)
     return engine
 
 

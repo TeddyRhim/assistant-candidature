@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import ssl
+from html import unescape
 from html.parser import HTMLParser
 from ipaddress import ip_address
 from urllib.error import HTTPError, URLError
@@ -16,6 +17,8 @@ from src.models import JobOfferData
 
 MAX_PAGE_BYTES = 3_000_000
 MAX_DESCRIPTION_CHARACTERS = 100_000
+# En dessous, la page n'a donné qu'un résumé (ex. « Apply for… » de LinkedIn) : à lire à la main.
+MIN_USEFUL_DESCRIPTION = 200
 REQUEST_TIMEOUT_SECONDS = 20
 USER_AGENT = "assistant-candidatures/0.1 (user-initiated offer import)"
 
@@ -185,12 +188,12 @@ def import_offer_from_url(url: str) -> JobOfferData:
     if len(payload) > MAX_PAGE_BYTES:
         raise OfferImportError("La page est trop volumineuse pour être importée.")
     try:
-        html = payload.decode(charset, errors="replace")
+        page_html = payload.decode(charset, errors="replace")
     except LookupError as error:
         raise OfferImportError("La page utilise un encodage non pris en charge.") from error
 
     parser = _AnnouncementParser()
-    parser.feed(html)
+    parser.feed(page_html)
     structured = _job_posting(parser.json_ld)
     title = (
         _as_text(structured.get("title"))
@@ -204,16 +207,17 @@ def import_offer_from_url(url: str) -> JobOfferData:
         or parser.meta.get("description", "")
         or _clean_text(parser.article_parts or parser.all_parts)
     )
-    description = _clean_text([description])[:MAX_DESCRIPTION_CHARACTERS]
-    if not title.strip() or not description:
+    title = unescape(title)
+    description = unescape(_clean_text([description]))[:MAX_DESCRIPTION_CHARACTERS]
+    if not title.strip() or len(description) < MIN_USEFUL_DESCRIPTION:
         raise OfferUnreadable(
             "La page ne contient pas assez d'informations exploitables pour créer une offre. "
             "Le site masque peut-être son contenu ou nécessite une connexion.",
             normalized_url,
             host,
         )
-    company = _organization_name(structured.get("hiringOrganization"))
-    location = _job_location(structured.get("jobLocation"))
+    company = unescape(_organization_name(structured.get("hiringOrganization")))
+    location = unescape(_job_location(structured.get("jobLocation")))
     try:
         return JobOfferData(
             title=title[:250],
