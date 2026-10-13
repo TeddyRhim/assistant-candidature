@@ -52,3 +52,6 @@ dist/
 Thumbs.db
 desktop.ini
 *.log
+
+# Fichier temporaire de la CI (audit des dépendances)
+requirements-audit.txt

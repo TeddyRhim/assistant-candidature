@@ -217,7 +217,7 @@ def test_relocation_question_is_only_suggested_for_paris_or_international_offers
     )
     local_offer = JobOfferData(
         title="Backend developer",
-        location="Nice",
+        location="Bourg-en-Bresse",
         source="Adzuna (FR)",
         description="Description.",
     )

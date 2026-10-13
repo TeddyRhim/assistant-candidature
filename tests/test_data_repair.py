@@ -47,15 +47,18 @@ def test_stale_target_role_and_html_entities_are_repaired_once(tmp_path: Path) -
     offer = create_offer(
         engine,
         JobOfferData(
-            title="Développeur PHP H/F at Acme — Nice | LinkedIn Jobs",
+            title="Développeur PHP H/F at Acme — Bourg-en-Bresse | LinkedIn Jobs",
             company="Acme",
-            location="Provence-Alpes-Côte d&#39;Azur",
+            location="Côte-d&#39;Or",
             url="https://x.test/o",
             description="Poste d&amp;ev sur l&#39;API.",
         ),
     )
     save_tailored_resume(
-        engine, offer.id, "a" * 32, _cv("Développeur PHP H/F at Acme — Nice | LinkedIn Jobs")
+        engine,
+        offer.id,
+        "a" * 32,
+        _cv("Développeur PHP H/F at Acme — Bourg-en-Bresse | LinkedIn Jobs"),
     )
 
     first = repair_legacy_data(engine)
@@ -65,7 +68,7 @@ def test_stale_target_role_and_html_entities_are_repaired_once(tmp_path: Path) -
     assert not second.changed
     with Session(engine) as session:
         stored = session.get(JobOffer, offer.id)
-        assert stored.location == "Provence-Alpes-Côte d'Azur"
+        assert stored.location == "Côte-d'Or"
         assert stored.description == "Poste d&ev sur l'API."
     repaired = json.loads(get_tailored_resume(engine, offer.id).content)
     assert repaired["target_role"] == "Développeur PHP"

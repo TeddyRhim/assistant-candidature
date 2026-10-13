@@ -1,7 +1,7 @@
 """Réparations idempotentes des données enregistrées par d'anciennes versions.
 
 Appelées au démarrage : une base déjà propre n'est pas modifiée.
-- entités HTML laissées dans les offres importées (« d&#39;Azur » au lieu de « d'Azur ») ;
+- entités HTML laissées dans les offres importées (« d&#39;Or » au lieu de « d'Or ») ;
 - champ `target_role` des CV ciblés générés avant le nettoyage des titres d'annonces.
 """
 

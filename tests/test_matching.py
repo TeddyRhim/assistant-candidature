@@ -149,7 +149,7 @@ def test_offer_fit_weights_skills_and_adds_target_role_contract_and_location() -
     profile = ProfileData(
         target_role="Développeur backend",
         preferred_contracts=["CDI"],
-        local_locations=["Nice"],
+        local_locations=["Bourg-en-Bresse"],
         remote_only_outside_local_area=True,
         skills=[
             SkillRating(name="PHP", category="Forte", level_min=8, level_max=8),
@@ -288,7 +288,7 @@ def test_search_languages_follow_declared_levels() -> None:
 def test_hybrid_work_does_not_satisfy_remote_only_preference() -> None:
     profile = ProfileData(
         target_role="Développeur",
-        local_locations=["Nice"],
+        local_locations=["Bourg-en-Bresse"],
         remote_only_outside_local_area=True,
     )
     offer = JobOfferData(
@@ -311,7 +311,7 @@ def test_company_fit_labels_registered_software_activity_without_inventing_team_
     )
     company = Company(
         name="Studio Exemple",
-        location="Nice",
+        location="Bourg-en-Bresse",
         development_evidence=(
             "Activité déclarée 62.01Z (Programmation informatique). "
             "La présence d'une équipe reste à vérifier."
@@ -331,8 +331,8 @@ def test_saved_registry_candidate_is_identified_as_software_activity() -> None:
     candidate = CompanyCandidate(
         siren="123456789",
         name="Studio Exemple",
-        location="Nice",
-        department="06",
+        location="Bourg-en-Bresse",
+        department="01",
         activity_code="62.01Z",
         employee_range=None,
         source_url="https://annuaire-entreprises.data.gouv.fr/entreprise/123456789",
@@ -350,8 +350,8 @@ def test_search_registry_candidate_data_can_be_assessed_before_saving() -> None:
     candidate = CompanyCandidateData(
         siren="123456789",
         name="Studio Exemple",
-        location="Nice",
-        department="06",
+        location="Bourg-en-Bresse",
+        department="01",
         activity_code="62.01Z",
         source_url="https://annuaire-entreprises.data.gouv.fr/entreprise/123456789",
         activity_api_url="https://recherche-entreprises.api.gouv.fr/search",
@@ -369,7 +369,7 @@ def test_repeated_scoring_of_the_same_offer_reuses_the_cached_evidence() -> None
     offer = JobOfferData(
         title="Développeur PHP Symfony H/F",
         company="Atelier Tech",
-        location="Nice",
+        location="Bourg-en-Bresse",
         description="PHP 8, Symfony et API REST pour un produit SaaS.",
     )
     profile = ProfileData(

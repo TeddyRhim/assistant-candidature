@@ -37,7 +37,7 @@ def _apply(
         engine,
         CompanyData(
             name=company_name,
-            location="Nice",
+            location="Bourg-en-Bresse",
             source_url="https://example.com/team",
             development_evidence="Équipe logicielle présentée sur le site.",
         ),
@@ -88,7 +88,7 @@ def test_queue_hides_twin_of_recently_applied_offer(tmp_path: Path) -> None:
             JobOfferData(
                 title="Développeur PHP H/F",
                 company=company,
-                location="Nice",
+                location="Bourg-en-Bresse",
                 url=url,
                 description="PHP.",
             ),

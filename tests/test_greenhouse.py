@@ -33,7 +33,7 @@ SAMPLE_GREENHOUSE_PAYLOAD = {
             "id": 789012,
             "title": "Stagiaire Développeur Python",
             "absolute_url": "https://boards.greenhouse.io/ateliertech/jobs/789012",
-            "location": {"name": "Nice, France"},
+            "location": {"name": "Bourg-en-Bresse, France"},
             "content": "<p>Stage de 6 mois pour étudiant en fin d'études.</p>",
         },
     ]
@@ -74,7 +74,7 @@ def test_fetch_greenhouse_listings_success() -> None:
 
     second = listings[1]
     assert second.contract_type == "Stage"
-    assert second.location == "Nice, France"
+    assert second.location == "Bourg-en-Bresse, France"
     assert second.country_code == "FR"
     assert second.relocation_signal == "not_mentioned"
 

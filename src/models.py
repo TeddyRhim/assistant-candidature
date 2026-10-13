@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import JSON, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from src.services.geo import check_department
 
 SkillCategory = Literal[
     "Forte",
@@ -16,7 +26,8 @@ SkillCategory = Literal[
 ]
 ContractType = Literal["CDI", "CDD", "Freelance", "Stage", "Alternance", "Autre"]
 OfferStatus = Literal["À examiner", "Intéressante", "Écartée", "Candidature liée"]
-CompanyDepartment = Literal["06", "75", "83"]
+# Tout département français ; la zone choisie vient de la page Veille, jamais du code.
+CompanyDepartment = Annotated[str, AfterValidator(check_department)]
 ApplicationStatus = Literal[
     "À préparer",
     "Prête à envoyer",

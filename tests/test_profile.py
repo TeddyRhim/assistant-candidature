@@ -28,7 +28,7 @@ def test_profile_persists_and_updates_in_sqlite(tmp_path) -> None:
         experience_min_years=5,
         experience_max_years=7,
         preferred_contracts=["CDI"],
-        local_locations=["Nice", "Var"],
+        local_locations=["Bourg-en-Bresse", "Isère"],
         skills=[
             SkillRating(
                 name="Symfony",

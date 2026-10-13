@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7,<3",
-    "pypdf>=4.2,<6",
+    "pypdf>=6.19,<7",
     "python-docx>=1.1,<2",
     "certifi>=2024.2.2",
     "langdetect>=1.0.9,<2",

@@ -21,7 +21,7 @@ def offer_data(**overrides: object) -> JobOfferData:
     data: dict[str, object] = {
         "title": "Développeur Symfony",
         "company": "Exemple",
-        "location": "Nice",
+        "location": "Bourg-en-Bresse",
         "contract_type": "CDI",
         "url": "https://jobs.example.com/backend",
         "description": "Développement et maintenance d'API.",
@@ -107,7 +107,7 @@ def test_rejects_url_conflict_on_update_and_deletes_offer(tmp_path) -> None:
 def _company_data(**overrides: object) -> CompanyData:
     data: dict[str, object] = {
         "name": "Exemple",
-        "location": "Nice",
+        "location": "Bourg-en-Bresse",
         "source_url": "https://example.com",
         "development_evidence": "Équipe tech confirmée via le site.",
     }

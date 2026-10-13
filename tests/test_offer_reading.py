@@ -67,7 +67,7 @@ def _profile() -> ProfileData:
 DETAILS = {
     "title": "Développeur PHP Symfony H/F",
     "company": "Atelier Tech",
-    "location": "Nice",
+    "location": "Bourg-en-Bresse",
     "contract_type": "CDI",
     "description": "Nous cherchons un développeur PHP et Symfony pour notre équipe produit.",
 }

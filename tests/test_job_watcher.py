@@ -89,7 +89,7 @@ def test_run_watcher_cycle_imports_matching_and_skips_duplicates(tmp_path: Path)
             source_name="Greenhouse (Atelier Tech)",
             title="Développeur Backend PHP Symfony",
             company="Atelier Tech",
-            location="Nice",
+            location="Bourg-en-Bresse",
             original_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/1"),
             description="Recherche développeur PHP Symfony, API REST et SQL pour CDI.",
         ),
@@ -208,7 +208,7 @@ def test_cycle_skips_excluded_titles_and_keeps_score_out_of_description(
             source_name="Greenhouse (Atelier Tech)",
             title="Développeur Symfony",
             company="Atelier Tech",
-            location="Nice",
+            location="Bourg-en-Bresse",
             original_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/10"),
             description="PHP Symfony API REST SQL.",
             public_contact_email="jobs@ateliertech.example",
@@ -219,7 +219,7 @@ def test_cycle_skips_excluded_titles_and_keeps_score_out_of_description(
             source_name="Greenhouse (Atelier Tech)",
             title="Stage Développeur Symfony",
             company="Atelier Tech",
-            location="Nice",
+            location="Bourg-en-Bresse",
             original_url=AnyHttpUrl("https://boards.greenhouse.io/ateliertech/jobs/11"),
             description="PHP Symfony API REST SQL.",
         ),
@@ -251,7 +251,7 @@ def _france_travail_listing() -> SourceListing:
         source_name="France Travail",
         title="Développeur PHP Symfony",
         company="Atelier Exemple",
-        location="Nice (06)",
+        location="Bourg-en-Bresse (01)",
         contract_type="CDI",
         original_url=AnyHttpUrl("https://candidat.francetravail.fr/offres/recherche/detail/1"),
         description="PHP Symfony API REST SQL.",
@@ -259,7 +259,7 @@ def _france_travail_listing() -> SourceListing:
 
 
 def _ft_cycle_config(**overrides: object) -> WatcherConfig:
-    overrides.setdefault("france_travail_departments", ["06", "83"])
+    overrides.setdefault("france_travail_departments", ["01", "38"])
     return WatcherConfig(
         enable_adzuna=False,
         min_match_percentage=40,
@@ -277,8 +277,8 @@ def test_cycle_imports_france_travail_offers_with_cdi_filter(
     initialize_database(engine)
     search_result = ProfileSearchResult(
         listings=(_france_travail_listing(),),
-        failed_targets=(("Var — « PHP »", "HTTP 500"),),
-        searched_targets=("Alpes-Maritimes",),
+        failed_targets=(("Isère — « PHP »", "HTTP 500"),),
+        searched_targets=("Ain",),
         search_terms=("PHP",),
     )
 
@@ -292,7 +292,7 @@ def test_cycle_imports_france_travail_offers_with_cdi_filter(
 
     assert result.france_travail_scanned is True
     assert result.new_offers_imported == 1
-    assert any("France Travail (Var" in error for error in result.errors)
+    assert any("France Travail (Isère" in error for error in result.errors)
     assert search.call_args.kwargs["contract_codes"] == ("CDI",)
     [offer] = list_offers(engine)
     assert offer.source == "France Travail"
@@ -525,7 +525,7 @@ def test_cycle_skips_non_dev_titles(tmp_path: Path) -> None:
         source_name="Greenhouse (X)",
         title="Développeur Backend PHP Symfony",
         company="Atelier Tech",
-        location="Nice",
+        location="Bourg-en-Bresse",
         original_url=AnyHttpUrl("https://boards.greenhouse.io/x/jobs/1"),
         description="PHP Symfony API REST SQL.",
     )
@@ -534,7 +534,7 @@ def test_cycle_skips_non_dev_titles(tmp_path: Path) -> None:
         source_name="Greenhouse (X)",
         title="Technicien Support Informatique PHP",
         company="Atelier Tech",
-        location="Nice",
+        location="Bourg-en-Bresse",
         original_url=AnyHttpUrl("https://boards.greenhouse.io/x/jobs/2"),
         description="PHP Symfony API REST SQL.",
     )

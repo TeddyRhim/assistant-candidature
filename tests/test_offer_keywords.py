@@ -10,7 +10,7 @@ from src.services.offer_keywords import (
 OFFER = JobOfferData(
     title="Développeur PHP Symfony H/F",
     company="Atelier Tech",
-    location="Nice",
+    location="Bourg-en-Bresse",
     description=(
         "Vous maîtrisez PHP 8 et Symfony. API REST obligatoire, SQL. "
         "Tests unitaires appréciés. Kubernetes est un plus."

@@ -18,7 +18,7 @@ from src.services.companies import (
 def company_data(**overrides: object) -> CompanyData:
     data: dict[str, object] = {
         "name": "Studio Exemple",
-        "location": "Nice",
+        "location": "Bourg-en-Bresse",
         "website_url": "https://studio.example.com",
         "source_url": "https://studio.example.com/equipe",
         "development_evidence": (
@@ -49,11 +49,12 @@ def test_company_requires_source_for_public_contact_and_activity() -> None:
 
 def test_creates_and_filters_companies_by_location(tmp_path) -> None:
     engine = make_engine(tmp_path)
-    nice = create_company(engine, company_data())
-    create_company(engine, company_data(name="Studio Var", location="Toulon"))
+    bourg = create_company(engine, company_data())
+    create_company(engine, company_data(name="Studio Isère", location="Grenoble"))
 
-    assert nice.name == "Studio Exemple"
-    assert [company.location for company in list_companies(engine, "nice")] == ["Nice"]
+    assert bourg.name == "Studio Exemple"
+    found = list_companies(engine, "bourg-en-bresse")
+    assert [company.location for company in found] == ["Bourg-en-Bresse"]
     assert len(list_companies(engine)) == 2
     engine.dispose()
 
@@ -63,7 +64,7 @@ def test_rejects_duplicate_company_name_in_same_location_case_insensitively(tmp_
     create_company(engine, company_data())
 
     with pytest.raises(DuplicateCompany):
-        create_company(engine, company_data(name="STUDIO EXEMPLE", location="nice"))
+        create_company(engine, company_data(name="STUDIO EXEMPLE", location="bourg-en-bresse"))
 
     assert len(list_companies(engine)) == 1
     engine.dispose()

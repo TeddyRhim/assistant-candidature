@@ -8,7 +8,7 @@ Application locale (Python, Streamlit, SQLAlchemy et SQLite) d'aide à la recher
 - Veille (collecte quotidienne) : `uv run python -m src.cli daily`, ou le bouton de la page Veille. Code retour 1 si le profil est incomplet.
 - File des CV à soigner : `uv run python -m src.cli soigner list|show <id>|save <id> <fichier.json>|state <id> <état>`, pilotée par le skill local `soigner-cv` (`.claude/skills/`, non versionné).
 - Annonces illisibles : `uv run python -m src.cli lire list|save <id> <fichier.json>|unreadable <id> <raison>`, pilotée par le skill local `lire-annonces` (Chrome de l'utilisateur), qui enchaîne sur `soigner-cv`.
-- Tests : `uv run pytest`. Lint : `uv run ruff check .` (longueur de ligne 100, règles E, F, I, UP, Python 3.11). La CI GitHub exécute les deux.
+- Tests : `uv run pytest`. Lint : `uv run ruff check .` (longueur de ligne 100, règles E, F, I, UP, Python 3.11). La CI GitHub exécute les deux, plus `pip-audit` sur les dépendances verrouillées (`uv.lock`).
 - CV autonome : `uv run python render.py [entrée.json sortie.pdf]`.
 - Tâche planifiée Windows (facultative, non utilisée par défaut) : `scripts/install_daily_task.ps1`.
 
@@ -32,6 +32,7 @@ Ne jamais remettre à zéro le compteur de quota Jooble sans raison. Adzuna : un
 
 ## Règles métier
 - Les exclusions personnelles, la zone prioritaire, le seuil de score et les interrupteurs par source se règlent dans la page Veille ou dans `data/watcher_config.json`, jamais en dur dans le code ni dans les tests.
+- Départements : une seule table complète, `src/services/geo.py`. Les pages La Bonne Boîte et Registre proposent d'abord les départements de la veille (`france_travail_departments`), sans valeur par défaut dans le code. Les tests utilisent une zone d'exemple (Ain 01, Isère 38), sans lien avec la recherche réelle.
 - Filtres : titres de stage et d'alternance, rôles hors développement, contrats exclus, annonces ni en français ni en anglais, score sous le seuil. Doublons : même URL ou même clé normalisée (titre, entreprise, lieu).
 - Une offre dont l'entreprise et le poste correspondent à une candidature envoyée dans les 7 derniers jours est ignorée par la veille et masquée de la file d'envoi.
 - Au démarrage (application et commandes), `repair_legacy_data` décode les entités HTML restées dans les offres et aligne `target_role` des CV ciblés sur le poste seul ; une base propre n'est pas modifiée. L'import par lien traite une page qui ne donne qu'un résumé de moins de 200 caractères (par exemple « Apply for… » de LinkedIn) comme illisible : le lien est gardé « À lire ».

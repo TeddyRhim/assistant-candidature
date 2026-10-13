@@ -28,7 +28,7 @@ def _job(**overrides: object) -> dict[str, object]:
         "id": "42",
         "title": "Développeur <b>PHP</b> Symfony H/F",
         "company": "Exemple SAS",
-        "location": "Nice",
+        "location": "Bourg-en-Bresse",
         "snippet": "&nbsp;...maîtrise de <b>Symfony</b> et API REST...",
         "salary": "35k €/an",
         "source": "hellowork.com",
@@ -57,7 +57,7 @@ def test_job_is_mapped_with_clean_text_and_origin_site() -> None:
     assert listing.title == "Développeur PHP Symfony H/F"
     assert listing.source_name == "Jooble (hellowork.com)"
     assert listing.company == "Exemple SAS"
-    assert listing.location == "Nice"
+    assert listing.location == "Bourg-en-Bresse"
     assert "<" not in listing.description
     assert "Salaire indiqué : 35k €/an." in listing.description
     assert str(listing.original_url) == "https://fr.jooble.org/desc/42"
@@ -85,7 +85,7 @@ def test_every_request_is_counted_and_capped_per_run(tmp_path: Path) -> None:
     result = search_jooble(
         SECRET,
         ["PHP", "Symfony", "SQL"],
-        ["Nice", "Toulon", "Cannes"],
+        ["Bourg-en-Bresse", "Grenoble", "Oyonnax"],
         max_requests=4,
         post=post,
         sleep=lambda _s: None,
@@ -96,9 +96,9 @@ def test_every_request_is_counted_and_capped_per_run(tmp_path: Path) -> None:
     assert load_usage().used == 4  # compteur persisté
     # Technologie par technologie : « PHP » est cherché dans toutes les zones d'abord.
     assert [(c["keywords"], c["location"]) for c in post.calls][:3] == [
-        ("PHP", "Nice"),
-        ("PHP", "Toulon"),
-        ("PHP", "Cannes"),
+        ("PHP", "Bourg-en-Bresse"),
+        ("PHP", "Grenoble"),
+        ("PHP", "Oyonnax"),
     ]
     assert len(result.listings) == 1  # la même offre n'est gardée qu'une fois
 
@@ -108,7 +108,7 @@ def test_search_stops_when_the_quota_is_nearly_exhausted() -> None:
     post = _post_returning([])
 
     result = search_jooble(
-        SECRET, ["PHP", "Symfony"], ["Nice", "Toulon", "Cannes"], max_requests=50,
+        SECRET, ["PHP", "Symfony"], ["Bourg-en-Bresse", "Grenoble", "Oyonnax"], max_requests=50,
         post=post, sleep=lambda _s: None,
     )
 
@@ -118,7 +118,7 @@ def test_search_stops_when_the_quota_is_nearly_exhausted() -> None:
     assert any("quota" in error for error in result.errors)
     # Quota épuisé : plus aucune requête.
     again = search_jooble(
-        SECRET, ["PHP"], ["Nice"], max_requests=50, post=post, sleep=lambda _s: None
+        SECRET, ["PHP"], ["Bourg-en-Bresse"], max_requests=50, post=post, sleep=lambda _s: None
     )
     assert again.requests_made == 0 and len(post.calls) == 5
 
@@ -133,7 +133,11 @@ def test_rate_limit_stops_the_run_and_the_key_never_appears_in_errors() -> None:
         raise RemoteBoardRateLimited("Jooble : limite de requêtes atteinte (HTTP 429).")
 
     result = search_jooble(
-        SECRET, ["PHP"], ["Nice", "Toulon", "Cannes"], post=post, sleep=lambda _s: None
+        SECRET,
+        ["PHP"],
+        ["Bourg-en-Bresse", "Grenoble", "Oyonnax"],
+        post=post,
+        sleep=lambda _s: None,
     )
 
     assert result.rate_limited is True
@@ -160,7 +164,7 @@ def test_post_json_errors_never_contain_the_key() -> None:
 def test_empty_key_makes_no_request() -> None:
     post = _post_returning([_job()])
 
-    result = search_jooble("  ", ["PHP"], ["Nice"], post=post)
+    result = search_jooble("  ", ["PHP"], ["Bourg-en-Bresse"], post=post)
 
     assert result.requests_made == 0 and post.calls == []
 

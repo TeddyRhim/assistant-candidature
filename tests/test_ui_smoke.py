@@ -305,7 +305,7 @@ def test_offers_page_shows_a_first_page_of_offers_and_can_show_all(seeded_data: 
             JobOfferData(
                 title=f"Développeur PHP numéro {number}",
                 company="Atelier Tech",
-                location="Nice",
+                location="Bourg-en-Bresse",
                 url=f"https://example.com/lot/{number}",
                 description="PHP et Symfony pour notre équipe.",
             ),
@@ -321,3 +321,21 @@ def test_offers_page_shows_a_first_page_of_offers_and_can_show_all(seeded_data: 
 
     next(box for box in at.selectbox if box.key == "offers_page_size").select(0).run()
     assert not any("non affichée" in str(caption.value) for caption in at.caption)
+
+
+def test_discovery_page_proposes_the_watcher_departments_first(
+    seeded_data: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La zone vient de la configuration locale de veille, jamais du code."""
+    from src.services.job_watcher import WatcherConfig, save_watcher_config
+
+    monkeypatch.setenv("FRANCE_TRAVAIL_CLIENT_ID", "id-de-test")
+    monkeypatch.setenv("FRANCE_TRAVAIL_CLIENT_SECRET", "secret-de-test")
+    save_watcher_config(WatcherConfig(france_travail_departments=["38", "01"]))
+
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    _open_page(at, "decouvrir")
+    assert not at.exception
+    assert at.title[0].value == "Découvrir des entreprises"
+    assert at.multiselect[0].value == ["38", "01"]
+    assert at.selectbox[0].options[:2] == ["38 — Isère", "01 — Ain"]

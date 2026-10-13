@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from pydantic import AnyHttpUrl, ValidationError
 
 from src.models import ContractType, ProfileData
+from src.services.geo import DEPARTMENTS
 from src.services.job_sources.adzuna import (
     ProfileSearchResult,
     ordered_profile_terms,
@@ -39,16 +40,7 @@ FRANCE_TRAVAIL_MAX_PAGE_SIZE = 150
 FRANCE_TRAVAIL_WORKERS = 4
 PUBLISHED_SINCE_CHOICES = (1, 3, 7, 14, 31)
 DEFAULT_DEPARTMENTS: tuple[str, ...] = ()  # à choisir dans la page Veille
-DEPARTMENT_NAMES = {
-    "06": "Alpes-Maritimes",
-    "83": "Var",
-    "13": "Bouches-du-Rhône",
-    "75": "Paris",
-    "84": "Vaucluse",
-    "34": "Hérault",
-    "69": "Rhône",
-    "31": "Haute-Garonne",
-}
+DEPARTMENT_NAMES = DEPARTMENTS
 CONTRACT_CODES: dict[ContractType, str] = {"CDI": "CDI", "CDD": "CDD", "Freelance": "LIB"}
 
 FRANCE_TRAVAIL_DESCRIPTOR = JobSourceDescriptor(
