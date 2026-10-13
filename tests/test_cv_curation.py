@@ -61,7 +61,7 @@ def _offer(engine: Engine, title: str = "Développeur PHP Symfony H/F") -> str:
         JobOfferData(
             title=title,
             company="Atelier Tech",
-            location="Nice",
+            location="Bourg-en-Bresse",
             url=f"https://example.com/{title.replace(' ', '-')}",
             description="PHP et Symfony, API REST.",
         ),
@@ -177,7 +177,7 @@ def test_completing_the_ad_text_sends_a_curated_cv_back_to_the_queue(engine: Eng
         JobOfferData(
             title="Développeur PHP",
             company="Atelier Tech",
-            location="Nice",
+            location="Bourg-en-Bresse",
             url="https://example.com/court",
             source="Adzuna",
             description="PHP.",

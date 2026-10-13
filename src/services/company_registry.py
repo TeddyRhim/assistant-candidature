@@ -23,6 +23,7 @@ from src.models import (
     CompanyDepartment,
 )
 from src.services.companies import create_company
+from src.services.geo import DEPARTMENTS
 
 REGISTRY_API_ROOT = "https://recherche-entreprises.api.gouv.fr"
 REGISTRY_TIMEOUT_SECONDS = 30
@@ -35,11 +36,7 @@ SOFTWARE_ACTIVITY_CODES = {
     "62.03Z": "Gestion d'installations informatiques",
     "62.09Z": "Autres activités informatiques",
 }
-COMPANY_DEPARTMENT_LABELS = {
-    "06": "Alpes-Maritimes",
-    "75": "Paris",
-    "83": "Var",
-}
+COMPANY_DEPARTMENT_LABELS = DEPARTMENTS
 REGISTRY_SEARCH_WORKERS = 3
 
 

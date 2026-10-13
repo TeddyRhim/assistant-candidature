@@ -63,7 +63,7 @@ def _offer(title: str, description: str, **extra: str) -> JobOfferData:
     return JobOfferData(
         title=title,
         company=extra.pop("company", "Atelier Tech"),
-        location=extra.pop("location", "Nice"),
+        location=extra.pop("location", "Bourg-en-Bresse"),
         url=extra.pop("url", f"https://example.com/jobs/{title.replace(' ', '-')}"),
         description=description,
         **extra,
@@ -106,7 +106,7 @@ def test_queue_reports_which_documents_exist(engine: Engine) -> None:
 
 
 def test_mark_sent_creates_company_application_and_follow_up(engine: Engine) -> None:
-    offer = create_offer(engine, _offer("Développeur PHP", "PHP.", location="Nice"))
+    offer = create_offer(engine, _offer("Développeur PHP", "PHP.", location="Bourg-en-Bresse"))
 
     application = mark_offer_sent(engine, offer.id, sent_on=date(2026, 10, 6))
 
@@ -130,7 +130,7 @@ def test_mark_sent_reuses_existing_company_and_rejects_second_send(engine: Engin
         engine,
         CompanyData(
             name="Atelier Tech",
-            location="Cannes",
+            location="Oyonnax",
             source_url="https://atelier.example/equipe",
             development_evidence="Équipe de développement citée sur le site.",
         ),
@@ -205,7 +205,7 @@ def test_spontaneous_queue_lists_prospects_without_any_application(engine: Engin
     fresh = _prospect(engine, "Alpha Info")
     with_letter = _prospect(engine, "Beta Soft")
     applied_spontaneously = _prospect(engine, "Gamma Dev")
-    applied_via_offer = _prospect(engine, "Atelier Tech", "Nice")
+    applied_via_offer = _prospect(engine, "Atelier Tech", "Bourg-en-Bresse")
     save_cover_letter(engine, "Madame, Monsieur,\n\nBonjour.", company_id=with_letter.id)
     mark_spontaneous_sent(engine, applied_spontaneously.id, role="Développeur PHP")
     offer = create_offer(engine, _offer("Développeur PHP", "PHP.", company="Atelier Tech"))
@@ -249,12 +249,12 @@ def test_mark_spontaneous_sent_validates_company_and_role(engine: Engine) -> Non
 
 
 def test_contact_search_links_are_plain_links_with_encoded_company_name(engine: Engine) -> None:
-    company = _prospect(engine, "Société & Fils", "Aix-en-Provence")
+    company = _prospect(engine, "Société & Fils", "Annecy")
 
     links = dict(contact_search_links(company))
 
     assert links["Chercher le site et le contact"] == (
-        "https://www.google.com/search?q=Soci%C3%A9t%C3%A9+%26+Fils+Aix-en-Provence+contact+recrutement"
+        "https://www.google.com/search?q=Soci%C3%A9t%C3%A9+%26+Fils+Annecy+contact+recrutement"
     )
     assert links["Chercher sur LinkedIn"].endswith("keywords=Soci%C3%A9t%C3%A9+%26+Fils")
 

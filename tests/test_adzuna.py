@@ -37,7 +37,7 @@ def test_search_maps_adzuna_listing_and_query_parameters() -> None:
                 "id": "123",
                 "title": "Développeur PHP",
                 "company": {"display_name": "Studio Exemple"},
-                "location": {"display_name": "Nice"},
+                "location": {"display_name": "Bourg-en-Bresse"},
                 "contract_type": "permanent",
                 "redirect_url": "https://www.adzuna.fr/land/123",
                 "description": "Développement Symfony et API.",
@@ -47,7 +47,7 @@ def test_search_maps_adzuna_listing_and_query_parameters() -> None:
     response = BytesIO(json.dumps(payload).encode())
     query = JobSearchQuery(
         keywords=["PHP", "Symfony", "developer"],
-        locations=["Nice"],
+        locations=["Bourg-en-Bresse"],
     )
 
     with patch("src.services.job_sources.adzuna.urlopen", return_value=response) as open_url:
@@ -58,7 +58,7 @@ def test_search_maps_adzuna_listing_and_query_parameters() -> None:
     assert params["app_id"] == ["test-id"]
     assert params["app_key"] == ["test-key"]
     assert params["what"] == ["PHP Symfony developer"]
-    assert params["where"] == ["Nice"]
+    assert params["where"] == ["Bourg-en-Bresse"]
     assert results[0].source_name == "Adzuna"
     assert results[0].source_id == "123"
     assert results[0].title == "Développeur PHP"
@@ -119,23 +119,23 @@ def test_profile_search_uses_prioritized_terms_across_local_areas() -> None:
     ) as search:
         result = search_adzuna_for_profile(
             profile,
-            [("fr", "Nice"), ("fr", "Cannes"), ("fr", "Var"), ("fr", "Paris")],
+            [("fr", "Bourg-en-Bresse"), ("fr", "Oyonnax"), ("fr", "Isère"), ("fr", "Paris")],
             "id",
             "key",
         )
 
     assert result.search_terms == ("PHP", "Symfony", "Développeur backend")
     assert result.searched_targets == (
-        "Nice, France",
-        "Cannes, France",
-        "Var, France",
+        "Bourg-en-Bresse, France",
+        "Oyonnax, France",
+        "Isère, France",
         "Paris, France",
     )
     assert len(result.listings) == 1
     assert search.call_count == 12
     assert {
         call.args[0].locations[0] for call in search.call_args_list
-    } == {"Nice", "Cannes", "Var", "Paris"}
+    } == {"Bourg-en-Bresse", "Oyonnax", "Isère", "Paris"}
     assert {
         call.args[0].keywords[0] for call in search.call_args_list
     } == {"PHP", "Symfony", "Développeur backend"}
@@ -151,7 +151,7 @@ def test_profile_search_reports_failed_areas_without_hiding_partial_results() ->
     )
 
     def search_for_area(_query, _country, _app_id, _app_key, _page):
-        if _query.locations == ["Nice"]:
+        if _query.locations == ["Bourg-en-Bresse"]:
             raise JobSourceError("HTTP 429")
         return []
 
@@ -161,29 +161,29 @@ def test_profile_search_reports_failed_areas_without_hiding_partial_results() ->
     ):
         result = search_adzuna_for_profile(
             profile,
-            [("fr", "Nice"), ("fr", "Cannes")],
+            [("fr", "Bourg-en-Bresse"), ("fr", "Oyonnax")],
             "id",
             "key",
         )
 
     assert set(result.failed_targets) == {
-        ("Nice, France — « PHP »", "HTTP 429"),
-        ("Nice, France — « Symfony »", "HTTP 429"),
-        ("Nice, France — « développeur »", "HTTP 429"),
+        ("Bourg-en-Bresse, France — « PHP »", "HTTP 429"),
+        ("Bourg-en-Bresse, France — « Symfony »", "HTTP 429"),
+        ("Bourg-en-Bresse, France — « développeur »", "HTTP 429"),
     }
-    assert result.searched_targets == ("Nice, France", "Cannes, France")
+    assert result.searched_targets == ("Bourg-en-Bresse, France", "Oyonnax, France")
 
 
 def test_profile_search_rejects_profile_without_role_or_skills() -> None:
     with pytest.raises(JobSourceError, match="poste visé"):
-        search_adzuna_for_profile(ProfileData(), [("fr", "Nice")], "id", "key")
+        search_adzuna_for_profile(ProfileData(), [("fr", "Bourg-en-Bresse")], "id", "key")
 
 
 def test_profile_search_runs_in_background_and_returns_result() -> None:
     expected = ProfileSearchResult(
         listings=(),
         failed_targets=(),
-        searched_targets=("Nice, France",),
+        searched_targets=("Bourg-en-Bresse, France",),
         search_terms=("Développeur backend",),
     )
     with patch(
@@ -192,7 +192,7 @@ def test_profile_search_runs_in_background_and_returns_result() -> None:
     ) as search:
         job_id = start_profile_search(
             ProfileData(target_role="Développeur backend"),
-            [("fr", "Nice")],
+            [("fr", "Bourg-en-Bresse")],
             "id",
             "key",
         )
@@ -308,11 +308,11 @@ def test_search_locations_come_from_configuration_then_profile() -> None:
 
 def test_local_search_prioritizes_non_paris_in_region_priority() -> None:
     non_paris = SourceListing(
-        source_id="nice",
+        source_id="bourg",
         source_name="Adzuna",
         title="Backend developer",
-        location="Nice, France",
-        original_url="https://jobs.example.com/nice",
+        location="Bourg-en-Bresse, France",
+        original_url="https://jobs.example.com/bourg",
     )
     paris = SourceListing(
         source_id="paris",
@@ -323,19 +323,19 @@ def test_local_search_prioritizes_non_paris_in_region_priority() -> None:
     )
     assert not is_paris_listing(non_paris)
     assert is_paris_listing(paris)
-    assert listing_title_with_location(non_paris) == "Backend developer — Nice, France"
+    assert listing_title_with_location(non_paris) == "Backend developer — Bourg-en-Bresse, France"
 
 
 def test_listing_title_does_not_repeat_location_already_in_title() -> None:
     listing = SourceListing(
-        source_id="nice",
+        source_id="bourg",
         source_name="Adzuna",
-        title="Backend developer — NICE",
-        location="Nice, France",
-        original_url="https://jobs.example.com/nice",
+        title="Backend developer — BOURG-EN-BRESSE",
+        location="Bourg-en-Bresse, France",
+        original_url="https://jobs.example.com/bourg",
     )
 
-    assert listing_title_with_location(listing) == "Backend developer — NICE"
+    assert listing_title_with_location(listing) == "Backend developer — BOURG-EN-BRESSE"
 
 
 def test_local_search_prioritizes_non_paris_before_score_but_global_does_not() -> None:
@@ -350,28 +350,28 @@ def test_local_search_prioritizes_non_paris_before_score_but_global_does_not() -
         original_url="https://jobs.example.com/paris",
         description="PHP development.",
     )
-    nice_lower_match = SourceListing(
-        source_id="nice",
+    bourg_lower_match = SourceListing(
+        source_id="bourg",
         source_name="Adzuna",
         title="Backend developer",
-        location="Nice, France",
-        original_url="https://jobs.example.com/nice",
+        location="Bourg-en-Bresse, France",
+        original_url="https://jobs.example.com/bourg",
         description="Build backend services.",
     )
 
     local_ranked = rank_adzuna_results(
-        [paris_high_match, nice_lower_match],
+        [paris_high_match, bourg_lower_match],
         profile,
         prioritize_local_areas=True,
     )
     international_ranked = rank_adzuna_results(
-        [nice_lower_match, paris_high_match],
+        [bourg_lower_match, paris_high_match],
         profile,
         prioritize_local_areas=False,
     )
 
-    assert [listing.source_id for listing in local_ranked] == ["nice", "paris"]
-    assert [listing.source_id for listing in international_ranked] == ["paris", "nice"]
+    assert [listing.source_id for listing in local_ranked] == ["bourg", "paris"]
+    assert [listing.source_id for listing in international_ranked] == ["paris", "bourg"]
 
 
 @pytest.mark.parametrize(
@@ -474,7 +474,13 @@ def test_throttled_search_retries_once_after_rate_limit() -> None:
 
     with patch("src.services.job_sources.adzuna.search_adzuna", side_effect=flaky):
         result = search_adzuna_throttled(
-            _profile_php(), "fr", "Nice", "id", "key", pause_seconds=0, retry_wait_seconds=0
+            _profile_php(),
+            "fr",
+            "Bourg-en-Bresse",
+            "id",
+            "key",
+            pause_seconds=0,
+            retry_wait_seconds=0,
         )
 
     assert result.rate_limited is False
@@ -487,7 +493,13 @@ def test_throttled_search_stops_after_two_consecutive_rate_limits() -> None:
         "src.services.job_sources.adzuna.search_adzuna", side_effect=AdzunaRateLimited("429")
     ) as search:
         result = search_adzuna_throttled(
-            _profile_php(), "fr", "Nice", "id", "key", pause_seconds=0, retry_wait_seconds=0
+            _profile_php(),
+            "fr",
+            "Bourg-en-Bresse",
+            "id",
+            "key",
+            pause_seconds=0,
+            retry_wait_seconds=0,
         )
 
     assert result.rate_limited is True
@@ -499,7 +511,9 @@ def test_throttled_search_pauses_between_keywords() -> None:
         patch("src.services.job_sources.adzuna.search_adzuna", return_value=[]),
         patch("src.services.job_sources.adzuna.time.sleep") as sleep,
     ):
-        search_adzuna_throttled(_profile_php(), "fr", "Nice", "id", "key", pause_seconds=3)
+        search_adzuna_throttled(
+            _profile_php(), "fr", "Bourg-en-Bresse", "id", "key", pause_seconds=3
+        )
 
     assert sleep.call_count >= 1
     assert all(call.args == (3,) for call in sleep.call_args_list)

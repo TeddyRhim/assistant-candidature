@@ -14,6 +14,7 @@ from sqlalchemy import Engine
 
 from src.models import Company, CompanyCandidateData, CompanyData, CompanyDepartment
 from src.services.companies import create_company
+from src.services.geo import DEPARTMENTS
 from src.services.job_sources.base import JobSourceDescriptor, JobSourceError
 from src.services.job_sources.france_travail import _clear_token_cache, get_access_token
 
@@ -25,8 +26,9 @@ BONNE_BOITE_PAGE_SIZE = 100
 BONNE_BOITE_MAX_PAGES = 5
 BONNE_BOITE_MIN_INTERVAL_SECONDS = 0.55  # quota publié : 2 appels par seconde
 ANNUAIRE_URL = "https://annuaire-entreprises.data.gouv.fr/entreprise/{siren}"
-SUPPORTED_DEPARTMENTS: tuple[CompanyDepartment, ...] = ("06", "75", "83")
-DEFAULT_DEPARTMENTS: tuple[CompanyDepartment, ...] = ("06", "83")
+SUPPORTED_DEPARTMENTS: tuple[CompanyDepartment, ...] = tuple(DEPARTMENTS)
+# Aucun département par défaut : la page propose ceux de la configuration de veille.
+DEFAULT_DEPARTMENTS: tuple[CompanyDepartment, ...] = ()
 ROME_CODES = {
     "M1805": "Développeur / Développeuse informatique",
     "M1806": "Consultant fonctionnel / Consultante fonctionnelle des systèmes d'information",
@@ -164,7 +166,7 @@ def search_bonne_boite(
     if not rome_codes or any(code not in ROME_CODES for code in rome_codes):
         raise JobSourceError("Choisis au moins un code métier pris en charge.")
     if not departments or any(code not in SUPPORTED_DEPARTMENTS for code in departments):
-        raise JobSourceError("Choisis au moins un département parmi 06, 75 et 83.")
+        raise JobSourceError("Choisis au moins un département valide.")
     if not 1 <= max_pages <= 20:
         raise JobSourceError("Le nombre de pages doit être compris entre 1 et 20.")
 
@@ -189,7 +191,7 @@ def search_bonne_boite(
         total_hits = int(payload["hits"])  # type: ignore[call-overload]
         items = payload.get("items")
         for item in items if isinstance(items, list) else []:
-            company = _map_company(item, api_url.split("&page=")[0])
+            company = _map_company(item, api_url.split("&page=")[0], departments)
             if company is None:
                 continue
             known = companies_by_siret.get(company.siret)
@@ -213,7 +215,10 @@ def _normalize_naf(naf: str) -> str:
     return f"{match.group(1)}.{match.group(2)}{match.group(3)}" if match else naf.strip()
 
 
-def _map_company(item: object, api_url: str) -> BonneBoiteCompany | None:
+def _map_company(
+    item: object, api_url: str, departments: tuple[str, ...]
+) -> BonneBoiteCompany | None:
+    """Entreprise normalisée, ou None si invalide ou hors des départements demandés."""
     if not isinstance(item, dict):
         return None
     siret = item.get("siret")
@@ -231,7 +236,7 @@ def _map_company(item: object, api_url: str) -> BonneBoiteCompany | None:
         or not city.strip()
         or not isinstance(naf, str)
         or not isinstance(potential, (int, float))
-        or department not in SUPPORTED_DEPARTMENTS
+        or department not in departments
     ):
         return None
     email = item.get("email")

@@ -3032,7 +3032,13 @@ def _show_bonne_boite_tab(engine: Engine) -> None:
         departments = st.multiselect(
             "Départements entiers",
             options=list(BONNE_BOITE_SUPPORTED_DEPARTMENTS),
-            default=list(BONNE_BOITE_DEFAULT_DEPARTMENTS),
+            # Par défaut, les départements choisis pour la veille (configuration locale).
+            default=[
+                code
+                for code in load_watcher_config().france_travail_departments
+                if code in BONNE_BOITE_SUPPORTED_DEPARTMENTS
+            ]
+            or list(BONNE_BOITE_DEFAULT_DEPARTMENTS),
             format_func=lambda code: f"{code} — {COMPANY_DEPARTMENT_LABELS[code]}",
         )
         rome_codes = st.multiselect(
@@ -3140,9 +3146,9 @@ def _show_bonne_boite_tab(engine: Engine) -> None:
 
 def _show_registry_discovery_tab(engine: Engine) -> None:
     st.write(
-        "Recherche des sociétés actives dans les Alpes-Maritimes (06), à Paris (75) ou "
-        "dans le Var (83) à partir de l'API publique Recherche d'entreprises. Les pistes "
-        "ajoutées ici deviennent sélectionnables pour une candidature spontanée."
+        "Recherche des sociétés actives d'un département à partir de l'API publique "
+        "Recherche d'entreprises. Les pistes ajoutées ici deviennent sélectionnables pour "
+        "une candidature spontanée."
     )
     st.warning(
         "Le registre décrit une activité administrative (NAF/APE) ; il ne confirme ni une "
@@ -3165,14 +3171,19 @@ def _show_registry_discovery_tab(engine: Engine) -> None:
             help="Un mot-clé restreint la recherche. Laisse ce champ vide pour parcourir "
             "automatiquement les activités logicielles.",
         )
+        # Les départements de la veille sont proposés en premier ; la zone n'est pas dans le code.
+        preferred = [
+            code
+            for code in load_watcher_config().france_travail_departments
+            if code in COMPANY_DEPARTMENT_LABELS
+        ]
+        department_options = preferred + [
+            code for code in COMPANY_DEPARTMENT_LABELS if code not in preferred
+        ]
         department = st.selectbox(
             "Département",
-            options=["06", "75", "83"],
-            format_func=lambda value: {
-                "06": "Alpes-Maritimes — Nice, Cannes, Antibes…",
-                "75": "Paris",
-                "83": "Var — Toulon, Draguignan, Fréjus…",
-            }[value],
+            options=department_options,
+            format_func=lambda code: f"{code} — {COMPANY_DEPARTMENT_LABELS[code]}",
         )
         activity_options: list[str | None] = [None, *SOFTWARE_ACTIVITY_CODES]
         activity_code = st.selectbox(

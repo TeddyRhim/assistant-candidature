@@ -42,10 +42,13 @@ _FEMININE_ALTERNATIVE = re.compile(
 _SEPARATORS = re.compile(r"\s+[-–—|]+\s*|\s*[–—|]+\s*|\s+@\s*|\s+(?:at|chez)\s+", re.IGNORECASE)
 _TRAILING_FILLER = re.compile(r"(?:\s+(?:en|de|à|au|chez|pour|et|des|du))+\s*$", re.IGNORECASE)
 _LEADING_PUNCTUATION = " \t,;:-–—|•*"
+# Les plus grandes villes de France (par population) ; le lieu propre à chaque offre est
+# ajouté à part, à partir de son champ `location` (voir `_places_pattern`).
 _COMMON_PLACES = (
-    "paris|nice|marseille|lyon|cannes|antibes|sophia[- ]antipolis|toulouse|bordeaux|lille|"
-    "nantes|strasbourg|montpellier|toulon|monaco|biot|valbonne|mougins|grasse|rennes|"
-    "aix-en-provence|cagnes-sur-mer|menton|vallauris|île-de-france|ile-de-france"
+    "paris|marseille|lyon|toulouse|nice|nantes|montpellier|strasbourg|bordeaux|lille|rennes|"
+    "toulon|reims|saint-étienne|le havre|grenoble|dijon|angers|nîmes|villeurbanne|"
+    "clermont-ferrand|aix-en-provence|brest|tours|amiens|limoges|metz|besançon|perpignan|"
+    "orléans|rouen|caen|nancy|la défense|île-de-france|ile-de-france"
 )
 _ROLE_WORDS = re.compile(
     r"(?<!\w)(?:d[ée]veloppeu\w*|developer|engineer|ing[ée]nieur\w*|architecte|lead|senior|"

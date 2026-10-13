@@ -56,7 +56,7 @@ def test_import_uses_jobposting_metadata_and_keeps_source_url() -> None:
          "title":"Developpeur backend (m/f/d)",
          "description":"<p>@@DESC@@</p>",
          "hiringOrganization":{"@type":"Organization","name":"Studio Exemple"},
-         "jobLocation":{"address":{"addressLocality":"Nice","addressCountry":"FR"}}}
+         "jobLocation":{"address":{"addressLocality":"Bourg-en-Bresse","addressCountry":"FR"}}}
       </script>
     </head><body><main><h1>Annonce generique</h1></main></body></html>
     """
@@ -70,7 +70,7 @@ def test_import_uses_jobposting_metadata_and_keeps_source_url() -> None:
 
     assert offer.title == "Developpeur backend"
     assert offer.company == "Studio Exemple"
-    assert offer.location == "Nice, FR"
+    assert offer.location == "Bourg-en-Bresse, FR"
     assert offer.description == LONG_DESCRIPTION
     assert offer.url == "https://jobs.example.org/role"
     assert offer.source == "Import URL — jobs.example.org"

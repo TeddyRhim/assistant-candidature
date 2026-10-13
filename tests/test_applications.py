@@ -26,7 +26,7 @@ def make_company(engine):
         engine,
         CompanyData(
             name="Studio Exemple",
-            location="Nice",
+            location="Bourg-en-Bresse",
             source_url="https://example.com/team",
             development_evidence="Page de présentation de l'équipe logicielle.",
         ),

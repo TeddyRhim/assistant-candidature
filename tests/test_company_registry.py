@@ -39,8 +39,8 @@ def sample_payload() -> dict:
                 },
                 "matching_etablissements": [
                     {
-                        "libelle_commune": "NICE",
-                        "departement": "06",
+                        "libelle_commune": "BOURG-EN-BRESSE",
+                        "departement": "01",
                     }
                 ],
             }
@@ -57,20 +57,20 @@ def test_search_maps_company_candidates_and_uses_area_filters() -> None:
     ) as open_url:
         candidates = search_company_registry(
             "programmation informatique",
-            "06",
+            "01",
             activity_code="62.01Z",
         )
 
     request = open_url.call_args.args[0]
     params = parse_qs(urlparse(request.full_url).query)
     assert params["q"] == ["programmation informatique"]
-    assert params["departement"] == ["06"]
+    assert params["departement"] == ["01"]
     assert params["activite_principale"] == ["62.01Z"]
     assert params["etat_administratif"] == ["A"]
     assert candidates[0].siren == "123456789"
     assert candidates[0].name == "Studio Exemple"
-    assert candidates[0].location == "NICE"
-    assert candidates[0].department == "06"
+    assert candidates[0].location == "BOURG-EN-BRESSE"
+    assert candidates[0].department == "01"
     assert candidates[0].employee_range is None
     assert str(candidates[0].source_url).endswith("/entreprise/123456789")
 
@@ -92,9 +92,9 @@ def test_search_supports_paris_department() -> None:
 
 def test_search_rejects_too_short_query_and_unknown_activity() -> None:
     with pytest.raises(CompanyRegistryError, match="trois caractères"):
-        search_company_registry("ab", "06")
+        search_company_registry("ab", "01")
     with pytest.raises(CompanyRegistryError, match="code d'activité"):
-        search_company_registry("informatique", "83", activity_code="99.99Z")
+        search_company_registry("informatique", "38", activity_code="99.99Z")
 
 
 def test_search_without_keywords_scans_and_deduplicates_all_software_activities() -> None:
@@ -104,7 +104,7 @@ def test_search_without_keywords_scans_and_deduplicates_all_software_activities(
         "src.services.company_registry.urlopen",
         side_effect=lambda *_args, **_kwargs: BytesIO(response_payload),
     ) as open_url:
-        candidates = search_company_registry("", "06")
+        candidates = search_company_registry("", "01")
 
     assert len(open_url.call_args_list) == len(SOFTWARE_ACTIVITY_CODES)
     assert [candidate.siren for candidate in candidates] == ["123456789"]
@@ -132,7 +132,7 @@ def test_company_discovery_default_keyword_is_usable() -> None:
         "src.services.company_registry.urlopen",
         return_value=response,
     ) as open_url:
-        search_company_registry("informatique", "06")
+        search_company_registry("informatique", "01")
 
     params = parse_qs(urlparse(open_url.call_args.args[0].full_url).query)
     assert params["q"] == ["informatique"]
@@ -143,7 +143,7 @@ def test_search_skips_incomplete_registry_results() -> None:
     response = BytesIO(json.dumps(payload).encode())
 
     with patch("src.services.company_registry.urlopen", return_value=response):
-        assert search_company_registry("informatique", "83") == []
+        assert search_company_registry("informatique", "38") == []
 
 
 def test_search_reports_network_failure_reason() -> None:
@@ -154,7 +154,7 @@ def test_search_reports_network_failure_reason() -> None:
         ),
         pytest.raises(CompanyRegistryError, match="DNS lookup failed"),
     ):
-        search_company_registry("informatique", "06", activity_code="62.01Z")
+        search_company_registry("informatique", "01", activity_code="62.01Z")
 
 
 def test_search_reports_expired_tls_certificate_without_disabling_verification() -> None:
@@ -169,7 +169,7 @@ def test_search_reports_expired_tls_certificate_without_disabling_verification()
         ) as open_url,
         pytest.raises(CompanyRegistryError, match="vérification TLS de l'API a échoué"),
     ):
-        search_company_registry("informatique", "06", activity_code="62.01Z")
+        search_company_registry("informatique", "01", activity_code="62.01Z")
 
     assert open_url.call_args.kwargs["context"].check_hostname is True
     assert open_url.call_args.kwargs["context"].verify_mode == ssl.CERT_REQUIRED
@@ -180,7 +180,7 @@ def test_registry_candidates_are_saved_once_by_siren(tmp_path) -> None:
     db.initialize_database(engine)
     response = BytesIO(json.dumps(sample_payload()).encode())
     with patch("src.services.company_registry.urlopen", return_value=response):
-        candidate = search_company_registry("programmation", "06")[0]
+        candidate = search_company_registry("programmation", "01")[0]
 
     save_company_candidate(engine, candidate)
     assert [item.siren for item in list_company_candidates(engine)] == ["123456789"]
@@ -201,14 +201,14 @@ def test_discovered_candidate_can_become_prospect_without_creating_job_offer(
         "src.services.company_registry.urlopen",
         return_value=BytesIO(json.dumps(sample_payload()).encode()),
     ):
-        candidate = search_company_registry("", "06", activity_code="62.01Z")[0]
+        candidate = search_company_registry("", "01", activity_code="62.01Z")[0]
     save_company_candidate(engine, candidate)
 
     prospect = promote_company_candidate_to_prospect(engine, candidate)
 
     assert [item.siren for item in list_company_candidates(engine)] == ["123456789"]
     assert [(company.name, company.location) for company in list_companies(engine)] == [
-        ("Studio Exemple", "NICE")
+        ("Studio Exemple", "BOURG-EN-BRESSE")
     ]
     assert "ne confirme pas la présence" in prospect.development_evidence
     assert "équipe tech" in prospect.notes

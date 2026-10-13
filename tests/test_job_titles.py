@@ -31,7 +31,7 @@ REAL_TITLES = [
     ),
     ("Data engineer python / airflow / sql f/h (CDI)", "Data engineer python / airflow / sql"),
     (
-        "Développeur Back-End PHP H/F at Synanto — Marseille, Provence-Alpes-Côte d&#39;Azur, "
+        "Développeur Back-End PHP H/F at Synanto — Dijon, Côte-d&#39;Or, "
         "France | LinkedIn Jobs",
         "Développeur Back-End PHP",
     ),
@@ -58,7 +58,7 @@ REAL_TITLES = [
         "Développeur Python confirmé",
     ),
     (
-        "Développeur Symfony Senior - Agence Digitale Innovante - Marseille (H/F)",
+        "Développeur Symfony Senior - Agence Digitale Innovante - Dijon (H/F)",
         "Développeur Symfony Senior",
     ),
     (
@@ -74,7 +74,7 @@ REAL_TITLES = [
     ),
     (
         "Ingénieur Testeur QA – Stratégies de Tests et Automatisation – Secteur des Télécoms – "
-        "Nice (H/F)",
+        "Bourg-en-Bresse (H/F)",
         "Ingénieur Testeur QA",
     ),
     ("INGÉNIEUR QA AUTOMATISATION F/H", "Ingénieur QA Automatisation"),
@@ -104,7 +104,7 @@ def test_clean_roles_are_left_untouched() -> None:
 
 
 def test_offer_location_is_removed_from_the_end_of_the_title() -> None:
-    assert extract_job_role("Développeur PHP Cagnes-sur-Mer", "Cagnes-sur-Mer (06)") == (
+    assert extract_job_role("Développeur PHP Cagnes-sur-Mer", "Cagnes-sur-Mer (01)") == (
         "Développeur PHP"
     )
     assert extract_job_role("Développeur PHP - Pantin", "Pantin, Bobigny") == "Développeur PHP"

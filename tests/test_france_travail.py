@@ -41,7 +41,7 @@ def _offer(**overrides: object) -> dict[str, object]:
         "id": "187ABCD",
         "intitule": "Développeur PHP Symfony H/F",
         "description": "Nous recherchons un développeur PHP.\nMaîtrise de Symfony requise.",
-        "lieuTravail": {"libelle": "06 - NICE", "commune": "06088"},
+        "lieuTravail": {"libelle": "01 - OYONNAX", "commune": "01053"},
         "entreprise": {"nom": "Atelier Exemple"},
         "typeContrat": "CDI",
         "natureContrat": "Contrat travail",
@@ -155,7 +155,7 @@ def test_search_sends_bearer_token_and_documented_parameters(api: FakeApi) -> No
         ["PHP", "Debug / maintenance"],
         "id-1",
         "secret-1",
-        department="06",
+        department="01",
         contract_codes=("CDI", "CDD"),
         published_since_days=14,
         limit=30,
@@ -166,7 +166,7 @@ def test_search_sends_bearer_token_and_documented_parameters(api: FakeApi) -> No
     assert parts.path == "/partenaire/offresdemploi/v2/offres/search"
     params = parse_qs(parts.query)
     assert params["motsCles"] == ["PHP Debug maintenance"]
-    assert params["departement"] == ["06"]
+    assert params["departement"] == ["01"]
     assert params["typeContrat"] == ["CDI,CDD"]
     assert params["publieeDepuis"] == ["14"]
     assert params["range"] == ["0-29"]
@@ -180,7 +180,7 @@ def test_offer_is_mapped_with_clean_location_contract_and_sourced_contact(api: F
     assert listing.source_name == "France Travail"
     assert listing.title == "Développeur PHP Symfony H/F"
     assert listing.company == "Atelier Exemple"
-    assert listing.location == "Nice (06)"
+    assert listing.location == "Oyonnax (01)"
     assert listing.contract_type == "CDI"
     assert listing.country_code == "FR"
     assert str(listing.original_url) == (
@@ -241,7 +241,7 @@ def test_http_errors_become_actionable_messages(api: FakeApi) -> None:
 
 def test_invalid_arguments_are_rejected_before_any_request(api: FakeApi) -> None:
     with pytest.raises(JobSourceError, match="département"):
-        france_travail.search_france_travail(["PHP"], "id", "secret", department="Nice")
+        france_travail.search_france_travail(["PHP"], "id", "secret", department="Bourg-en-Bresse")
     with pytest.raises(JobSourceError, match="période"):
         france_travail.search_france_travail(["PHP"], "id", "secret", published_since_days=5)
     with pytest.raises(JobSourceError, match="résultats"):
@@ -266,7 +266,7 @@ def test_profile_search_queries_each_keyword_and_department_and_deduplicates(
         _profile(),
         "id",
         "secret",
-        departments=("06", "83"),
+        departments=("01", "38"),
         contract_codes=("CDI",),
     )
 
@@ -275,7 +275,7 @@ def test_profile_search_queries_each_keyword_and_department_and_deduplicates(
     assert len(api.token_requests) == 1
     assert [listing.source_id for listing in result.listings] == ["francetravail-187ABCD"]
     assert result.failed_targets == ()
-    assert result.searched_targets == ("Alpes-Maritimes", "Var")
+    assert result.searched_targets == ("Ain", "Isère")
 
 
 def test_profile_search_reports_partial_failures_without_losing_results(
@@ -285,19 +285,19 @@ def test_profile_search_reports_partial_failures_without_losing_results(
     original = fake.__call__
 
     def flaky(request, timeout: float = 0):  # noqa: ANN001
-        if "departement=83" in request.full_url:
+        if "departement=38" in request.full_url:
             raise _http_error(request.full_url, 500)
         return original(request, timeout)
 
     monkeypatch.setattr(france_travail, "urlopen", flaky)
 
     result = france_travail.search_france_travail_for_profile(
-        _profile(), "id", "secret", departments=("06", "83")
+        _profile(), "id", "secret", departments=("01", "38")
     )
 
     assert len(result.listings) == 1
     assert len(result.failed_targets) == 3
-    assert all(target.startswith("Var") for target, _message in result.failed_targets)
+    assert all(target.startswith("Isère") for target, _message in result.failed_targets)
 
 
 def test_profile_search_requires_terms_and_departments(api: FakeApi) -> None:

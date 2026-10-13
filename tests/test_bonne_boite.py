@@ -19,6 +19,9 @@ from src.services.job_sources.bonne_boite import (
     search_bonne_boite,
 )
 
+# Zone d'exemple, sans lien avec la recherche réelle.
+DEPARTMENTS = ("01", "38")
+
 
 class FakeResponse:
     def __init__(self, body: object) -> None:
@@ -54,8 +57,8 @@ def _item(siret: str = "31500094300706", **overrides: object) -> dict[str, objec
         "city": "VALBONNE",
         "citycode": "06152",
         "postcode": "06560",
-        "department": "Alpes-Maritimes",
-        "department_number": "6",
+        "department": "Ain",
+        "department_number": "1",
         "hiring_potential": 27.6,
         "is_high_potential": False,
     }
@@ -113,7 +116,7 @@ def engine(tmp_path: Path) -> Engine:
 
 
 def test_search_uses_required_scopes_and_whole_department_parameters(api: FakeApi) -> None:
-    search_bonne_boite("id", "secret", rome_codes=("M1805",), departments=("06", "83"))
+    search_bonne_boite("id", "secret", rome_codes=("M1805",), departments=("01", "38"))
 
     assert api.token_forms[0]["scope"] == ["api_labonneboitev2 search office"]
     [url] = api.search_urls
@@ -121,7 +124,7 @@ def test_search_uses_required_scopes_and_whole_department_parameters(api: FakeAp
     assert parts.path == "/partenaire/labonneboite/v2/recherche"
     params = parse_qs(parts.query)
     assert params["rome"] == ["M1805"]
-    assert params["department_number"] == ["6", "83"]
+    assert params["department_number"] == ["1", "38"]
     assert params["page_size"] == ["100"]
     assert "sort_by" not in params  # le tri est refusé par l'API
     assert api.search_headers[0]["Authorization"] == "Bearer tok-lbb"
@@ -139,8 +142,8 @@ def test_companies_are_normalised_sorted_and_deduplicated(monkeypatch: pytest.Mo
                 headcount_min=0,
                 headcount_max=0,
                 naf="6203Z",
-                city="CANNES",
-                department_number="83",
+                city="OYONNAX",
+                department_number="38",
                 email="no",
                 hiring_potential=25.0,
             ),
@@ -150,7 +153,7 @@ def test_companies_are_normalised_sorted_and_deduplicated(monkeypatch: pytest.Mo
     }
     _install(monkeypatch, FakeApi([page]))
 
-    result = search_bonne_boite("id", "secret")
+    result = search_bonne_boite("id", "secret", departments=DEPARTMENTS)
 
     assert result.total_hits == 5
     assert [c.siret for c in result.companies] == ["31500094300706", "82193994900045"]
@@ -159,7 +162,7 @@ def test_companies_are_normalised_sorted_and_deduplicated(monkeypatch: pytest.Mo
     assert (first.siren, first.naf, first.department, first.city) == (
         "315000943",
         "62.02A",
-        "06",
+        "01",
         "Valbonne",
     )
     assert first.employee_range == "200 à 249 salariés"
@@ -178,14 +181,14 @@ def test_pagination_follows_hits_and_reports_truncation(monkeypatch: pytest.Monk
         }
 
     complete = _install(monkeypatch, FakeApi([page(1, 100, 150), page(101, 50, 150)]))
-    result = search_bonne_boite("id", "secret")
+    result = search_bonne_boite("id", "secret", departments=DEPARTMENTS)
     assert len(result.companies) == 150
     assert len(complete.search_urls) == 2
     assert "page=2" in complete.search_urls[1]
     assert result.truncated is False
 
     capped = _install(monkeypatch, FakeApi([page(1, 100, 900)]))
-    limited = search_bonne_boite("id", "secret", max_pages=1)
+    limited = search_bonne_boite("id", "secret", departments=DEPARTMENTS, max_pages=1)
     assert len(capped.search_urls) == 1
     assert limited.truncated is True
     assert limited.total_hits == 900
@@ -194,23 +197,25 @@ def test_pagination_follows_hits_and_reports_truncation(monkeypatch: pytest.Monk
 def test_errors_are_actionable_and_arguments_validated(api: FakeApi) -> None:
     api.search_error = 403
     with pytest.raises(JobSourceError, match="abonnée à l'API « La Bonne Boîte »"):
-        search_bonne_boite("id", "secret")
+        search_bonne_boite("id", "secret", departments=DEPARTMENTS)
     api.search_error = 429
     with pytest.raises(JobSourceError, match="limite le débit"):
-        search_bonne_boite("id", "secret")
+        search_bonne_boite("id", "secret", departments=DEPARTMENTS)
 
     api.search_error = None
     api.token_error_body = json.dumps({"error": "invalid_scope"}).encode()
     france_travail._clear_token_cache()
     with pytest.raises(JobSourceError, match="pas abonnée à l'API « La Bonne Boîte »"):
-        search_bonne_boite("id", "secret")
+        search_bonne_boite("id", "secret", departments=DEPARTMENTS)
 
     with pytest.raises(JobSourceError, match="code métier"):
-        search_bonne_boite("id", "secret", rome_codes=("X0000",))
+        search_bonne_boite("id", "secret", rome_codes=("X0000",), departments=DEPARTMENTS)
     with pytest.raises(JobSourceError, match="département"):
-        search_bonne_boite("id", "secret", departments=("13",))
+        search_bonne_boite("id", "secret", departments=("99",))
+    with pytest.raises(JobSourceError, match="département"):
+        search_bonne_boite("id", "secret")
     with pytest.raises(JobSourceError, match="pages"):
-        search_bonne_boite("id", "secret", max_pages=0)
+        search_bonne_boite("id", "secret", departments=DEPARTMENTS, max_pages=0)
 
 
 def _company(**overrides: object) -> BonneBoiteCompany:
@@ -219,7 +224,7 @@ def _company(**overrides: object) -> BonneBoiteCompany:
         "siren": "315000943",
         "name": "SOCIETE EXEMPLE INFORMATIQUE",
         "city": "Valbonne",
-        "department": "06",
+        "department": "01",
         "naf": "62.02A",
         "naf_label": "Conseil en systèmes et logiciels informatiques",
         "hiring_potential": 27.6,
@@ -236,7 +241,7 @@ def test_company_converts_to_registry_candidate() -> None:
 
     assert candidate.siren == "315000943"
     assert candidate.activity_code == "62.02A"
-    assert candidate.department == "06"
+    assert candidate.department == "01"
     assert candidate.employee_range == "20 à 49 salariés"
     assert str(candidate.source_url).endswith("/entreprise/315000943")
 
