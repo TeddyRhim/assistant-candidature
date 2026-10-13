@@ -274,12 +274,13 @@ def test_link_already_saved_is_reported_without_reading_it(
 def test_offer_is_kept_and_page_stays_usable_when_dossier_generation_crashes(
     seeded_data: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from src.services import dossier_generator
+    from src.ui.pages import offres
 
     def crash(*_args, **_kwargs):
         raise KeyError("experience")
 
-    monkeypatch.setattr(dossier_generator, "prepare_dossier_for_offer", crash)
+    # On remplace la fonction là où la page l'utilise (module importé une seule fois).
+    monkeypatch.setattr(offres, "prepare_dossier_for_offer", crash)
     at = AppTest.from_file(APP_PATH, default_timeout=60).run()
     _open_page(at, "offres")
     next(box for box in at.text_input if box.label == "Intitulé du poste").set_value(
@@ -339,3 +340,19 @@ def test_discovery_page_proposes_the_watcher_departments_first(
     assert at.title[0].value == "Découvrir des entreprises"
     assert at.multiselect[0].value == ["38", "01"]
     assert at.selectbox[0].options[:2] == ["38 — Isère", "01 — Ain"]
+
+
+ALL_PAGES = [
+    "aujourdhui", "profil", "cv", "offres", "recherche", "veille", "decouvrir", "entreprises",
+    "file-d-envoi", "cv-par-offre", "spontanee", "email", "suivi", "reglages",
+]
+
+
+@pytest.mark.parametrize("url_path", ALL_PAGES)
+def test_every_page_renders_without_exception(seeded_data: Path, url_path: str) -> None:
+    """Chaque module de `src/ui/pages` est chargé et rendu au moins une fois."""
+    at = AppTest.from_file(APP_PATH, default_timeout=60).run()
+    if url_path != "aujourdhui":  # la page par défaut est déjà ouverte (chemin vide)
+        _open_page(at, url_path)
+    assert not at.exception
+    assert at.title, f"page {url_path} sans titre"

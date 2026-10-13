@@ -19,7 +19,9 @@ Application locale (Python, Streamlit, SQLAlchemy et SQLite) d'aide à la recher
 Ne jamais remettre à zéro le compteur de quota Jooble sans raison. Adzuna : une zone à la fois, pauses, reprise par curseur.
 
 ## Structure
-- `src/app.py` (interface, très long), `src/cli.py`, `src/config.py`, `src/db.py`, `src/models.py`.
+- `src/app.py` : point d'entrée Streamlit seulement (configuration, pages, navigation). Chaque page vit dans `src/ui/pages/` (un fichier par page de la navigation) ; ce qui sert à plusieurs pages va dans `src/ui/commun.py`. Une nouvelle page : un module dans `src/ui/pages/`, puis une entrée dans `PAGES` et dans la navigation de `app.py`.
+- Dans les tests, remplacer une fonction là où la page l'utilise (`src.ui.pages.<page>.<fonction>`) : les modules de pages ne sont importés qu'une fois, contrairement à `app.py`, réexécuté à chaque rendu.
+- `src/cli.py`, `src/config.py`, `src/db.py`, `src/models.py`.
 - `src/services` : `job_watcher.py` (cycle de veille, filtres, doublons), `daily_run.py`, `matching.py`, `job_titles.py`, `send_queue.py`, `dossier_generator.py`, `tailored_resumes.py`, `offer_keywords.py` (mots de l'annonce, adaptation du CV), `recent_applications.py` (offres déjà visées cette semaine), `urls.py` (normalisation des liens), `data_repair.py` (réparations idempotentes au démarrage), `offer_reading.py` (liens d'annonces illisibles gardés « À lire »), `cv_curation.py` (état du CV : Automatique, À soigner, Soigné, et contrôle anti-invention), `cv_renderer.py` (Jinja2 et WeasyPrint), `cover_letters.py`, `applications.py`, `email_delivery.py`.
 - `src/services/job_sources` : un connecteur par source (Adzuna, France Travail, Jooble, Himalayas et RemoteOK, Greenhouse, Lever, La Bonne Boîte).
 - `templates/` (CV, lettre), `docs/` (architecture, sources, feuille de route), `tests/`.
