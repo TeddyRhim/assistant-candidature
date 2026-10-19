@@ -35,14 +35,30 @@ class ReadingError(ValueError):
     """La lecture complétée est refusée ou l'offre est introuvable."""
 
 
-def store_unread_offer(engine: Engine, url: str, host: str, reason: str) -> JobOffer:
-    """Garde le lien d'une annonce illisible, à lire plus tard avec le navigateur."""
+def store_unread_offer(
+    engine: Engine,
+    url: str,
+    host: str,
+    reason: str,
+    *,
+    title: str = "",
+    company: str = "",
+    location: str = "",
+    source: str = "",
+) -> JobOffer:
+    """Garde le lien d'une annonce illisible, à lire plus tard avec le navigateur.
+
+    Quand on connaît déjà l'intitulé (par exemple depuis un mail d'alerte), il remplace le titre
+    générique pour que la liste reste lisible.
+    """
     offer = create_offer(
         engine,
         JobOfferData(
-            title=f"Annonce à lire ({host})"[:250],
+            title=(title.strip() or f"Annonce à lire ({host})")[:250],
+            company=company.strip()[:200],
+            location=location.strip()[:200],
             url=clean_tracking(url),
-            source=f"Import URL — {host}"[:200],
+            source=(source.strip() or f"Import URL — {host}")[:200],
             description=UNREAD_PLACEHOLDER.format(reason=reason.strip() or "lecture impossible."),
         ),
         origin=ORIGIN_MANUAL,

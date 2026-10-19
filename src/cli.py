@@ -19,6 +19,15 @@ from src.services.cv_curation import (
 from src.services.daily_run import load_secrets_file, run_daily
 from src.services.data_repair import repair_legacy_data
 from src.services.job_titles import extract_job_role
+from src.services.mail_offers import (
+    DUPLICATE,
+    FAILED,
+    IMPORTED,
+    TO_READ,
+    import_mail_offers,
+    last_search_date,
+    record_search_date,
+)
 from src.services.offer_reading import (
     ReadingError,
     complete_read_offer,
@@ -113,6 +122,37 @@ def _lire(args: argparse.Namespace) -> int:
         return 1
 
 
+MAIL_STATUSES = (IMPORTED, TO_READ, DUPLICATE, FAILED)
+
+
+def _mails(args: argparse.Namespace) -> int:
+    """Offres relevées dans les alertes e-mail : date de la dernière recherche et import en lot."""
+    sys.stdout.reconfigure(encoding="utf-8")
+    if args.action == "depuis":
+        print(last_search_date() or "jamais")
+        return 0
+    if args.action == "noter":
+        print(f"Recherche notée au {record_search_date()}.")
+        return 0
+    try:
+        items = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        print(f"Erreur : {error}")
+        return 1
+    if not isinstance(items, list):
+        print("Erreur : le fichier doit contenir une liste d'offres.")
+        return 1
+    engine = _open_engine()
+    results = import_mail_offers(engine, load_or_seed_profile(engine), items)
+    for result in results:
+        prefix = f"{result.offer_id[:8]}  " if result.offer_id else ""
+        print(f"[{result.status}] {prefix}{result.label} : {result.detail}")
+    counts = {status: sum(r.status == status for r in results) for status in MAIL_STATUSES}
+    print(", ".join(f"{count} {status}" for status, count in counts.items()))
+    print(f"Recherche notée au {record_search_date()}.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.cli")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -139,10 +179,18 @@ def main(argv: list[str] | None = None) -> int:
     unreadable = read_actions.add_parser("unreadable", help="annonce impossible à lire")
     unreadable.add_argument("offer")
     unreadable.add_argument("reason")
+    mails = commands.add_parser("mails", help="offres relevées dans les alertes e-mail")
+    mail_actions = mails.add_subparsers(dest="action", required=True)
+    mail_actions.add_parser("depuis", help="date de la dernière recherche (AAAA/MM/JJ)")
+    mail_actions.add_parser("noter", help="note la recherche du jour sans rien importer")
+    mail_import = mail_actions.add_parser("import", help="importe une liste d'offres (JSON)")
+    mail_import.add_argument("file", help="JSON : liste de {title, company, location, url, source}")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     if args.command == "daily":
         return _daily()
+    if args.command == "mails":
+        return _mails(args)
     if args.command == "lire":
         return _lire(args)
     return _soigner(args)
