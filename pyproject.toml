@@ -30,6 +30,13 @@ dev = [
     "ruff>=0.5,<1",
 ]
 
+[tool.uv]
+# Toutes les versions de Streamlit plafonnent Pillow sous 13, alors que Pillow 12 a des failles
+# corrigées en 13.0.0. Le projet n'appelle pas Pillow directement (Streamlit, WeasyPrint et
+# ReportLab s'en servent) : on force la version corrigée. À retirer dès que Streamlit accepte
+# Pillow 13.
+override-dependencies = ["pillow>=13"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
