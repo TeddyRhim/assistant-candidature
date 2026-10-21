@@ -26,6 +26,7 @@ data/*
 # Internal development notes & temporary checklists
 docs/suivi-projet-et-questions.md
 docs/todo-tests.md
+docs/passation.md
 *.sqlite
 *.sqlite3
 *.db
